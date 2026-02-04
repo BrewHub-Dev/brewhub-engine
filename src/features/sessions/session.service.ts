@@ -31,3 +31,8 @@ export const deleteSessionsByUser = async (userId: Types.ObjectId | string) => {
 export const findSessionsByUser = async (userId: Types.ObjectId | string) => {
   return Session.find({ user: userId }).exec();
 };
+
+export const findActiveSessionsByUser = async (userId: Types.ObjectId | string) => {
+  const user = new Types.ObjectId(userId);
+  return Session.find({ user, expiresAt: { $gt: new Date() } }).exec();
+};

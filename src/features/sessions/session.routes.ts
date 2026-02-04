@@ -6,6 +6,7 @@ import {
   findSessionByToken,
   findSessionsByUser,
   createSession,
+  findActiveSessionsByUser,
 } from "./session.service";
 import { findUserByEmail } from "../users/user.service";
 
@@ -16,7 +17,7 @@ interface LoginRequest {
 }
 
 export const sessionRoutes: FastifyPluginAsync = async (app) => {
-  app.post("/login", async (req, reply) => {
+  app.post("/login", { config: { action: "sessions.login" } }, async (req, reply) => {
     try {
       const { emailAddress, password } = req.body as LoginRequest;
       if (!emailAddress || !password)
@@ -28,6 +29,13 @@ export const sessionRoutes: FastifyPluginAsync = async (app) => {
       const valid = await bcrypt.compare(password, user.password || "");
       if (!valid) return reply.status(401).send({ error: "Invalid credentials" });
 
+      const activeSessions = await findActiveSessionsByUser(user._id);
+      if (activeSessions.length > 0) {
+        return reply
+          .status(409)
+          .send({ error: "User already has an active session" });
+      }
+
       const token = sign({ user }, JWT_SECRET, { expiresIn: "1d" });
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
       await createSession(user._id, token, expiresAt);
@@ -37,7 +45,7 @@ export const sessionRoutes: FastifyPluginAsync = async (app) => {
       reply.status(500).send({ error: (e as Error).message });
     }
   });
-  app.get("/sessions", async (req, reply) => {
+  app.get("/sessions", { config: { action: "sessions.list" } }, async (req, reply) => {
     try {
       const token = req.cookies?.session;
       if (!token) return reply.status(401).send({ error: "No session" });
@@ -51,7 +59,7 @@ export const sessionRoutes: FastifyPluginAsync = async (app) => {
     }
   });
 
-  app.delete("/sessions", async (req, reply) => {
+  app.delete("/sessions", { config: { action: "sessions.delete" } }, async (req, reply) => {
     try {
       const token = req.cookies?.session;
       if (!token) return reply.status(400).send({ error: "No session" });

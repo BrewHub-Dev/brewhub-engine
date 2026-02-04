@@ -7,7 +7,7 @@ import { createSession } from "../sessions/session.service";
 const JWT_SECRET = process.env.JWT_SECRET;
 
 export const userRoutes: FastifyPluginAsync = async (app) => {
-  app.post("/users", async (req, reply) => {
+  app.post("/users", { config: { action: "users.create" } }, async (req, reply) => {
     try {
       const user = userSchema.parse(req.body);
       const created = await createUser(user);
@@ -21,7 +21,7 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
     }
   });
 
-  app.get("/users", async (req, reply) => {
+  app.get("/users", { config: { action: "users.list" } }, async (req, reply) => {
     try {
       const token = req.cookies?.session;
       if (!token) return reply.status(401).send({ error: "No session" });
