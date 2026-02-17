@@ -1,11 +1,10 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import fastifyCookie from "@fastify/cookie";
+import AutoLoad from "@fastify/autoload";
+import * as path from "node:path";
 import mongoose from "mongoose";
-import { userRoutes } from "@/features/users/user.routes";
-import { sessionRoutes } from "@/features/sessions/session.routes";
-import { shopRoutes } from "@/features/shops/shop.routes";
-import { branchesRoutes } from "./features/branches/branches.routes";
+import { authPlugin } from "@/auth/auth.plugin";
 const app = Fastify({ logger: true });
 
 app.addHook("onRoute", (routeOptions: any) => {
@@ -21,14 +20,21 @@ app.addHook("onRoute", (routeOptions: any) => {
   );
 });
 
-app.register(cors, { origin: "*" });
+app.register(cors, {
+  origin: process.env.CORS_ORIGIN || "http://localhost:3000",
+  credentials: true,
+  methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
+});
 app.register(fastifyCookie);
-app.register(userRoutes);
-app.register(sessionRoutes);
-app.register(shopRoutes);
-app.register(branchesRoutes)
 
-const PORT = 3001;
+void authPlugin(app, {});
+
+app.register(AutoLoad, {
+  dir: path.join(__dirname, "features"),
+  dirNameRoutePrefix: false,
+});
+
+const PORT = process.env.PORT || 3001;
 
 const start = async () => {
   try {
@@ -39,7 +45,7 @@ const start = async () => {
     });
     console.log("Mongoose connected");
 
-    const address = await app.listen({ port: PORT });
+    const address = await app.listen({ port: Number(PORT), host: "0.0.0.0" });
     console.log(`Backend corriendo en ${address}`);
   } catch (err) {
     console.error(err);

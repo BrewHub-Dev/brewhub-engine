@@ -1,0 +1,1 @@
+export { itemsRoutes as default } from "./items.routes";

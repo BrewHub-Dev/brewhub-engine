@@ -8,31 +8,65 @@ const objectIdSchema = z
 
 export const userSchema = z
   .object({
-    name: z.string().min(1, "Name is required"),
-    lastName: z.string().min(1, "Last name is required"),
-    username: z.string().min(3, "Username must have at least 3 characters"),
-    password: z.string().min(6, "Password must have at least 6 characters"),
+    name: z.string().min(1),
+    lastName: z.string().min(1),
+    username: z.string().min(3),
+    password: z.string().min(6),
+
+    emailAddress: z.email(),
+    phone: z.string().min(7),
+
+    role: z.enum([
+      "ADMIN",
+      "SHOP_ADMIN",
+      "BRANCH_ADMIN",
+      "CLIENT",
+    ]),
+
     address: z
       .object({
         street: z.string().min(1),
         city: z.string().min(1),
         state: z.string().min(1),
         zip: z.string().min(1),
-        country: z.string().min(1),
+        country: z.string().length(2),
       })
       .optional(),
+
     ShopId: objectIdSchema.optional(),
     BranchId: objectIdSchema.optional(),
-    isClient: z.boolean(),
-    phone: z.string().min(7, "Phone must have at least 7 digits"),
-    emailAddress: z.email("Invalid email address"),
+
+    active: z.boolean().default(true),
+
+    createdAt: z.date().optional(),
+    updatedAt: z.date().optional(),
   })
-  .refine(
-    (data) => data.isClient || (data.ShopId && data.BranchId instanceof ObjectId),
-    {
-      message: "ShopId & BranchId are required when isClient is false",
-      path: ["ShopId", "BranchId"],
+  .superRefine((data, ctx) => {
+    if (data.role === "ADMIN") return;
+
+    if (data.role === "SHOP_ADMIN" && !data.ShopId) {
+      ctx.addIssue({
+        path: ["ShopId"],
+        code: "custom",
+        message: "ShopId is required for SHOP_ADMIN",
+      });
     }
-  );
+
+    if (
+      data.role === "BRANCH_ADMIN" &&
+      (!data.ShopId || !data.BranchId)
+    ) {
+      ctx.addIssue({
+        path: ["ShopId", "BranchId"],
+        code: "custom",
+        message: "ShopId and BranchId are required for BRANCH_ADMIN",
+      });
+    }
+
+    if (data.role === "CLIENT") {
+      return;
+    }
+  });
+
 
 export type User = z.infer<typeof userSchema>;

@@ -1,14 +1,15 @@
 import { FastifyPluginAsync } from "fastify";
-import { sign, verify } from "jsonwebtoken";
+import { sign } from "jsonwebtoken";
 import * as bcrypt from "bcryptjs";
 import {
   deleteSessionByToken,
-  findSessionByToken,
   findSessionsByUser,
   createSession,
   findActiveSessionsByUser,
+  deleteSessionsByUser,
 } from "./session.service";
 import { findUserByEmail } from "../users/user.service";
+import { AuthTokenPayload } from "@/auth/scope";
 
 const JWT_SECRET = process.env.JWT_SECRET;
 interface LoginRequest {
@@ -35,8 +36,20 @@ export const sessionRoutes: FastifyPluginAsync = async (app) => {
           .status(409)
           .send({ error: "User already has an active session" });
       }
+      const payload: AuthTokenPayload = {
+        sub: user._id.toString(),
+        role: user.role,
+        shopId: user.ShopId ? user.ShopId.toString() : undefined,
+        // branchId solo se fija para BRANCH_ADMIN
+        branchId:
+          user.role === "BRANCH_ADMIN" && user.BranchId
+            ? user.BranchId.toString()
+            : undefined,
+        // defaultBranchId es puramente UX/contexto opcional
+        defaultBranchId: user.BranchId ? user.BranchId.toString() : undefined,
+      };
 
-      const token = sign({ user }, JWT_SECRET, { expiresIn: "1d" });
+      const token = sign(payload, JWT_SECRET, { expiresIn: "1d" });
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
       await createSession(user._id, token, expiresAt);
       reply.setCookie("session", token, { httpOnly: true, path: "/" });
@@ -45,26 +58,47 @@ export const sessionRoutes: FastifyPluginAsync = async (app) => {
       reply.status(500).send({ error: (e as Error).message });
     }
   });
-  app.get("/sessions", { config: { action: "sessions.list" } }, async (req, reply) => {
+  app.get("/sessions", { config: { action: "sessions.list" }, preHandler: app.authenticate }, async (req, reply) => {
     try {
-      const token = req.cookies?.session;
-      if (!token) return reply.status(401).send({ error: "No session" });
-      const payload = verify(token, JWT_SECRET);
-      const stored = await findSessionByToken(token);
-      if (!stored) return reply.status(401).send({ error: "Invalid session" });
-      const sessions = await findSessionsByUser(payload.user._id || payload.user);
+      if (!req.auth) {
+        return reply.status(401).send({ error: "No auth context" });
+      }
+
+      const sessions = await findSessionsByUser(req.auth.identity.userId.toString());
       reply.send(sessions);
     } catch (e) {
       reply.status(401).send({ error: (e as Error).message });
     }
   });
 
-  app.delete("/sessions", { config: { action: "sessions.delete" } }, async (req, reply) => {
+  app.delete("/sessions", { config: { action: "sessions.delete" }, preHandler: app.authenticate }, async (req, reply) => {
     try {
-      const token = req.cookies?.session;
-      if (!token) return reply.status(400).send({ error: "No session" });
+      if (!req.auth) {
+        return reply.status(401).send({ error: "No auth context" });
+      }
+      const token = req.auth.token;
       await deleteSessionByToken(token);
       reply.clearCookie("session");
+      reply.send({ ok: true });
+    } catch (e) {
+      reply.status(500).send({ error: (e as Error).message });
+    }
+  });
+
+  app.delete("/sessions/user/:id", { config: { action: "sessions.deleteByUser" }, preHandler: app.authenticate }, async (req, reply) => {
+    try {
+      if (!req.auth) {
+        return reply.status(401).send({ error: "No auth context" });
+      }
+
+      const { id } = req.params as { id: string };
+
+      // Solo ADMIN puede eliminar sesiones arbitrarias de usuario
+      if (req.auth.scope.role !== "ADMIN") {
+        return reply.status(403).send({ error: "Forbidden" });
+      }
+
+      await deleteSessionsByUser(id);
       reply.send({ ok: true });
     } catch (e) {
       reply.status(500).send({ error: (e as Error).message });

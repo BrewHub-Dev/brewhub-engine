@@ -3,7 +3,9 @@
     "baseUrl": "./src",
     "paths": {
       "@/*": ["*"]
-    }
+    },
+    "rootDir": "./src",
+    "outDir": "./dist"
   },
   "include": [
     "src",
