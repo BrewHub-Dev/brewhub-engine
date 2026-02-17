@@ -40,12 +40,10 @@ export const sessionRoutes: FastifyPluginAsync = async (app) => {
         sub: user._id.toString(),
         role: user.role,
         shopId: user.ShopId ? user.ShopId.toString() : undefined,
-        // branchId solo se fija para BRANCH_ADMIN
         branchId:
           user.role === "BRANCH_ADMIN" && user.BranchId
             ? user.BranchId.toString()
             : undefined,
-        // defaultBranchId es puramente UX/contexto opcional
         defaultBranchId: user.BranchId ? user.BranchId.toString() : undefined,
       };
 
@@ -93,7 +91,6 @@ export const sessionRoutes: FastifyPluginAsync = async (app) => {
 
       const { id } = req.params as { id: string };
 
-      // Solo ADMIN puede eliminar sesiones arbitrarias de usuario
       if (req.auth.scope.role !== "ADMIN") {
         return reply.status(403).send({ error: "Forbidden" });
       }

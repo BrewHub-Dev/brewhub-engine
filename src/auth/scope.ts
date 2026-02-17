@@ -84,7 +84,6 @@ export async function buildScope(
       if (!identity.shopId || !identity.branchId) {
         throw new Error("BRANCH_ADMIN identity is missing shopId/branchId");
       }
-      // BRANCH_ADMIN cannot change branch, ignore requestedBranchId entirely
       return {
         role: "BRANCH_ADMIN",
         shopId: identity.shopId,

@@ -56,7 +56,6 @@ export async function getItemById(id: ObjectId) {
 
   if (!item) return null;
 
-  // Obtener categoría si existe
   if (item.categoryId) {
     const category = await categories.findOne({ _id: new ObjectId(item.categoryId) });
     return {
@@ -71,7 +70,6 @@ export async function getItemById(id: ObjectId) {
 export async function updateItem(id: ObjectId, updates: Partial<Items>) {
   const items = db.collection("items");
 
-  // Convertir campos a ObjectId si es necesario
   const toUpdate: any = { ...updates };
   if (updates.categoryId) {
     toUpdate.categoryId = new ObjectId(updates.categoryId);

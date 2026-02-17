@@ -23,19 +23,16 @@ export const itemsRoutes: FastifyPluginAsync = async (app) => {
     },
     async (req, reply) => {
       try {
-        // Aplicar scope automáticamente
         const query = req.scopedQuery?.() || {};
 
         console.log("[Items] GET /items query:", query);
 
-        // Si hay filtro de ShopId en scope, usarlo
         if (query.ShopId) {
           const shopId = new ObjectId(query.ShopId);
           const items = await getItemsByShopId(shopId);
           return reply.send(items);
         }
 
-        // ADMIN sin header x-shop-id
         if (req.auth?.scope.role === "ADMIN") {
           const header = req.headers["x-shop-id"] as string | undefined;
           if (!header) {
@@ -47,7 +44,6 @@ export const itemsRoutes: FastifyPluginAsync = async (app) => {
           return reply.send(items);
         }
 
-        // Fallback: retornar vacío (no debería llegar aquí)
         reply.send([]);
       } catch (error) {
         reply.status(500).send({ error: (error as Error).message });
@@ -73,7 +69,6 @@ export const itemsRoutes: FastifyPluginAsync = async (app) => {
           return reply.status(401).send({ error: "No auth context" });
         }
 
-        // Determinar ShopId según el rol
         let shopId: ObjectId | undefined;
 
         if (
@@ -95,14 +90,12 @@ export const itemsRoutes: FastifyPluginAsync = async (app) => {
           return reply.status(400).send({ error: "ShopId is required" });
         }
 
-        // Validar datos
         const parsed = itemsSchema.partial({ ShopId: true }).parse(req.body);
 
         if (!parsed.categoryId) {
           return reply.status(400).send({ error: "categoryId is required" });
         }
 
-        // Crear item
         const toCreate = { ...parsed, ShopId: shopId.toHexString() } as any;
         const created = await createItem(toCreate);
 
@@ -139,7 +132,6 @@ export const itemsRoutes: FastifyPluginAsync = async (app) => {
           return reply.status(404).send({ error: "Item no encontrado" });
         }
 
-        // Validar scope
         const query = req.scopedQuery?.({ _id: item._id }) || {};
         if (query.ShopId && item.ShopId !== query.ShopId) {
           return reply.status(403).send({
@@ -174,13 +166,11 @@ export const itemsRoutes: FastifyPluginAsync = async (app) => {
       try {
         const { id } = req.params as { id: string };
 
-        // Verificar que el item existe y está en el scope
         const existingItem = await getItemById(new ObjectId(id));
         if (!existingItem) {
           return reply.status(404).send({ error: "Item no encontrado" });
         }
 
-        // Validar scope
         const query = req.scopedQuery?.({}) || {};
         if (query.ShopId && existingItem.ShopId !== query.ShopId) {
           return reply.status(403).send({
@@ -188,13 +178,8 @@ export const itemsRoutes: FastifyPluginAsync = async (app) => {
           });
         }
 
-        // Validar datos
         const parsed = itemsSchema.partial().parse(req.body);
-
-        // Actualizar
         const updated = await updateItem(new ObjectId(id), parsed);
-
-        console.log("[Items] Item actualizado:", id);
         reply.send(updated);
       } catch (error) {
         reply.status(400).send({ error: (error as Error).message });
@@ -222,13 +207,11 @@ export const itemsRoutes: FastifyPluginAsync = async (app) => {
       try {
         const { id } = req.params as { id: string };
 
-        // Verificar que el item existe y está en el scope
         const existingItem = await getItemById(new ObjectId(id));
         if (!existingItem) {
           return reply.status(404).send({ error: "Item no encontrado" });
         }
 
-        // Validar scope
         const query = req.scopedQuery?.({}) || {};
         if (query.ShopId && existingItem.ShopId !== query.ShopId) {
           return reply.status(403).send({
@@ -236,10 +219,7 @@ export const itemsRoutes: FastifyPluginAsync = async (app) => {
           });
         }
 
-        // Eliminar
         await deleteItem(new ObjectId(id));
-
-        console.log("[Items] Item eliminado:", id);
         reply.status(204).send();
       } catch (error) {
         reply.status(500).send({ error: (error as Error).message });
