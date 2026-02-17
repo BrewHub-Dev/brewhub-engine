@@ -1,5 +1,5 @@
 import { FastifyRequest, FastifyReply } from "fastify";
-import { hasPermission, hasAnyPermission, type Permission } from "../rbac";
+import { hasAnyPermission, type Permission } from "../rbac";
 
 /**
  * Middleware para requerir uno o más permisos
