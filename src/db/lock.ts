@@ -1,8 +1,6 @@
 import { Verrou } from "@verrou/core";
 import { redisStore } from "@verrou/core/drivers/redis";
 import { redis } from "./redis";
-
-// Duration: number in ms, or string like "5s", "2m", "1h", or null (no expiry)
 type Duration = number | string | null;
 
 export const verrou = new Verrou({
@@ -34,8 +32,6 @@ function resolveDuration(duration: Duration = "default"): Duration {
 export const createLock = (resource: string, options: LockOptions = {}) =>
   verrou.createLock(`LOCK#${resource}`, resolveDuration(options.duration));
 
-// ─── withLock — acquires, runs fn, always releases ──────────
-
 export async function withLock<T>(
   resource: string,
   fn: () => Promise<T>,
@@ -50,7 +46,6 @@ export async function withLock<T>(
   }
 }
 
-// ─── Lock key helpers ───────────────────────────────────────
 
 export const lockKeys = {
   orderCreate: (userId: string, branchId: string) =>

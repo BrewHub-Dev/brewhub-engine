@@ -189,8 +189,12 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "dashboard:view",
     "orders:view",
     "orders:create",
+    "orders:cancel",
     "profile:view",
     "profile:edit",
+    "branches:view",
+    "items:view",
+    "categories:view",
   ],
 };
 

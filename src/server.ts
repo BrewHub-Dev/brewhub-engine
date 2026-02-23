@@ -49,7 +49,7 @@ const start = async () => {
     await redis.ping();
     console.log("[Redis] Ping OK");
 
-    const address = await app.listen({ port: Number(PORT) });
+    const address = await app.listen({ port: 3001, host: "0.0.0.0" });
     console.log(`Backend corriendo en ${address}`);
   } catch (err) {
     console.error(err);

@@ -17,6 +17,9 @@ import {
   refundOrder,
   applyDiscount,
   ensureOrderIndexes,
+  getOrdersByShopId,
+  getActiveOrdersByUserId,
+  getOrderCountsForDashboard,
 } from "./orders.service";
 
 export const ordersRoutes: FastifyPluginAsync = async (app) => {
@@ -49,7 +52,7 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
         const order = await createAppOrder(parsed, customerId);
 
         console.log("[Orders] App order created:", order.orderNumber);
-        reply.status(201).send(order);
+        reply.status(200).send(order);
       } catch (error) {
         reply.status(400).send({ error: (error as Error).message });
         console.error("Error creating app order:", error);
@@ -79,7 +82,6 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
         const staffId = req.auth.identity.userId.toHexString();
         const staffRole = req.auth.scope.role;
 
-        // BRANCH_ADMIN: force their own branch
         if (staffRole === "BRANCH_ADMIN") {
           const branchId = req.auth.scope.branchId.toHexString();
           if (parsed.BranchId !== branchId) {
@@ -92,7 +94,7 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
         const order = await createPosOrder(parsed, staffId, staffRole);
 
         console.log("[Orders] POS order created:", order.orderNumber);
-        reply.status(201).send(order);
+        reply.status(200).send(order);
       } catch (error) {
         reply.status(400).send({ error: (error as Error).message });
         console.error("Error creating POS order:", error);
@@ -128,7 +130,6 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
           filter.BranchId = req.auth.scope.branchId;
         } else if (role === "SHOP_ADMIN") {
           filter.ShopId = req.auth.scope.shopId;
-          // Optionally narrow to branch
           const branchHeader = req.headers["x-branch-id"] as string | undefined;
           if (branchHeader) {
             filter.BranchId = new ObjectId(branchHeader);
@@ -418,6 +419,99 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
       } catch (error) {
         reply.status(400).send({ error: (error as Error).message });
         console.error("Error applying discount:", error);
+      }
+    }
+  );
+
+  app.get(
+    "/orders/shop/:shopId",
+    {
+      config: { action: "orders.by_shop" },
+      preHandler: [
+        app.authenticate,
+        requirePermission("orders:view"),
+        applyScopeMiddleware,
+      ],
+    },
+    async (req, reply) => {
+      try {
+        if (!req.auth) {
+          return reply.status(401).send({ error: "No auth context" });
+        }
+
+        const { shopId } = req.params as { shopId: string };
+        const orders = await getOrdersByShopId(new ObjectId(shopId));
+
+        console.log(`[Orders] Fetched orders for shop ${shopId}: ${orders.length} orders`);
+        reply.send(orders);
+      } catch (error) {
+        reply.status(500).send({ error: (error as Error).message });
+        console.error("Error fetching orders by shop:", error);
+      }
+    }
+  )
+
+  app.get(
+    '/orders/user/:userId',
+    {
+      config: { action: 'orders.by_user' },
+      preHandler: [
+        app.authenticate,
+        requirePermission('orders:view'),
+        applyScopeMiddleware,
+      ],
+    },
+    async (req, reply) => {
+      try {
+        if (!req.auth) {
+          return reply.status(401).send({ error: 'No auth context' });
+        }
+        
+        const { userId } = req.params as { userId: string };
+        const orders = await getActiveOrdersByUserId(new ObjectId(userId));
+        
+        if (req.auth.scope.role === 'CLIENT') {
+          const authUserId = req.auth.identity.userId.toHexString();
+          if (userId !== authUserId) {
+            return reply.status(403).send({ error: 'No tienes acceso a las órdenes de este usuario' });
+          }
+        }
+
+        reply.send(orders);
+      } catch (error) {
+        reply.status(500).send({ error: (error as Error).message });
+        console.error('Error fetching orders by user:', error);
+      }
+    }
+  )
+
+  app.get(
+    '/orders/user/:userId/dashboard-counts',
+    {
+      config: { action: 'orders.dashboard_counts' },
+      preHandler: [
+        app.authenticate,
+        requirePermission('orders:view'),
+        applyScopeMiddleware,
+      ],
+    },
+    async (req, reply) => {
+      try {
+        if (!req.auth) {
+          return reply.status(401).send({ error: 'No auth context' });
+        }
+        const { userId } = req.params as { userId: string };
+        if (req.auth.scope.role === 'CLIENT') {
+          const authUserId = req.auth.identity.userId.toHexString();
+          if (userId !== authUserId) {
+            return reply.status(403).send({ error: 'You do not have access to this resource' });
+          }
+        }
+        const counts = await getOrderCountsForDashboard(new ObjectId(userId));
+        reply.send(counts);
+      } catch (error) {
+        reply.status(500).send({ error: (error as Error).message });
+        console.error('Error fetching dashboard order counts:', error);
       }
     }
   );

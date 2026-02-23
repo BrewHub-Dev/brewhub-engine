@@ -1,5 +1,4 @@
 import { FastifyPluginAsync } from "fastify";
-import { ObjectId } from "mongodb";
 import { branchesSchema } from "./branches.model";
 import {
   createBranch,
@@ -51,7 +50,7 @@ export const branchesRoutes: FastifyPluginAsync = async (app) => {
 
         const branchCreated = await createBranch(toCreate);
         console.log("[Branches] Branch created:", branchCreated._id);
-        reply.status(201).send(branchCreated);
+        reply.status(200).send(branchCreated);
       } catch (error) {
         reply.status(400).send({ error: (error as Error).message });
         console.error("Error creating branch:", error);
@@ -98,6 +97,11 @@ export const branchesRoutes: FastifyPluginAsync = async (app) => {
             const branchId = req.auth.scope.branchId.toHexString();
             branches = branches.filter((b) => b._id.toString() === branchId);
           }
+        } else if (req.auth.scope.role === "CLIENT") {
+          // Clientes pueden ver todas las branches activas para ordenar
+          branches = await getBranches();
+          // Filtrar solo branches activas
+          branches = branches.filter((b) => b.active);
         } else {
           return reply.status(403).send({ error: "Not allowed to view branches" });
         }
@@ -106,6 +110,44 @@ export const branchesRoutes: FastifyPluginAsync = async (app) => {
       } catch (error) {
         reply.status(500).send({ error: (error as Error).message });
         console.error("Error fetching branches:", error);
+      }
+    }
+  );
+
+  app.get(
+    "/branches/shop/:shopId",
+    {
+      config: { action: "branches.list_by_shop" },
+      preHandler: [app.authenticate, requirePermission("branches:view")],
+    },
+    async (req, reply) => {
+      try {
+        const { shopId } = req.params as { shopId: string };
+
+        if (!req.auth) {
+          return reply.status(401).send({ error: "No auth context" });
+        }
+
+        const branches = await getBranchesByShopId(shopId);
+
+        if (req.auth.scope.role === "CLIENT") {
+          const activeBranches = branches.filter((b) => b.active);
+          return reply.send(activeBranches);
+        }
+
+        if (req.auth.scope.role !== "ADMIN") {
+          const userShopId = req.auth.scope.shopId?.toHexString();
+          if (shopId !== userShopId) {
+            return reply.status(403).send({
+              error: "No tienes acceso a las sucursales de esta tienda",
+            });
+          }
+        }
+
+        reply.send(branches);
+      } catch (error) {
+        reply.status(500).send({ error: (error as Error).message });
+        console.error("Error fetching branches by shop:", error);
       }
     }
   );
@@ -133,11 +175,13 @@ export const branchesRoutes: FastifyPluginAsync = async (app) => {
           return reply.status(401).send({ error: "No auth context" });
         }
 
-        if (req.auth.scope.role !== "ADMIN") {
-          const userShopId =
-            req.auth.scope.role !== "CLIENT"
-              ? req.auth.scope.shopId?.toHexString()
-              : undefined;
+        if (req.auth.scope.role === "CLIENT") {
+          // Clientes pueden ver cualquier branch activa
+          if (!branch.active) {
+            return reply.status(404).send({ error: "Branch not found" });
+          }
+        } else if (req.auth.scope.role !== "ADMIN") {
+          const userShopId = req.auth.scope.shopId?.toHexString();
           if (branch.ShopId?.toString() !== userShopId) {
             return reply
               .status(403)
@@ -185,11 +229,8 @@ export const branchesRoutes: FastifyPluginAsync = async (app) => {
           return reply.status(401).send({ error: "No auth context" });
         }
 
-        if (req.auth.scope.role !== "ADMIN") {
-          const userShopId =
-            req.auth.scope.role !== "CLIENT"
-              ? req.auth.scope.shopId?.toHexString()
-              : undefined;
+        if (req.auth.scope.role !== "ADMIN" && req.auth.scope.role !== "CLIENT") {
+          const userShopId = req.auth.scope.shopId?.toHexString();
           if (existingBranch.ShopId?.toString() !== userShopId) {
             return reply
               .status(403)
@@ -232,11 +273,8 @@ export const branchesRoutes: FastifyPluginAsync = async (app) => {
           return reply.status(401).send({ error: "No auth context" });
         }
 
-        if (req.auth.scope.role !== "ADMIN") {
-          const userShopId =
-            req.auth.scope.role !== "CLIENT"
-              ? req.auth.scope.shopId?.toHexString()
-              : undefined;
+        if (req.auth.scope.role !== "ADMIN" && req.auth.scope.role !== "CLIENT") {
+          const userShopId = req.auth.scope.shopId?.toHexString();
           if (existingBranch.ShopId?.toString() !== userShopId) {
             return reply
               .status(403)

@@ -42,8 +42,8 @@ export async function getItemsByShopId(ShopId: ObjectId) {
 
   const itemsWithCategory = result.map(item => ({
     ...item,
-    category: categoriesMap.get(item.categoryId?.toString()) || null,
-  }));
+    category: categoriesMap.get(item.categoryId?.toString()) ?? null,
+  })) as Array<Record<string, any> & { _id: ObjectId }>;
 
   return itemsWithCategory;
 }

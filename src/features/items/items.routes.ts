@@ -1,7 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { ObjectId } from "mongodb";
 import { createItem, getItemsByShopId, updateItem, deleteItem, getItemById } from "./items.service";
-import { itemsSchema } from "./items.model";
+import { Items, itemsSchema } from "./items.model";
 import { requirePermission } from "../../middleware/permissions.middleware";
 import { applyScopeMiddleware } from "../../middleware/scope.middleware";
 
@@ -48,6 +48,49 @@ export const itemsRoutes: FastifyPluginAsync = async (app) => {
       } catch (error) {
         reply.status(500).send({ error: (error as Error).message });
         console.error("Error fetching items:", error);
+      }
+    }
+  );
+
+  /**
+   * GET /items/shop/:shopId - Listar items de una tienda específica
+   * Permisos: items:view
+   * Acceso: Clientes pueden ver items activos de cualquier tienda
+   */
+  app.get(
+    "/items/shop/:shopId",
+    {
+      config: { action: "items.list_by_shop" },
+      preHandler: [app.authenticate, requirePermission("items:view")],
+    },
+    async (req, reply) => {
+      try {
+        const { shopId } = req.params as { shopId: string };
+
+        if (!req.auth) {
+          return reply.status(401).send({ error: "No auth context" });
+        }
+
+        const items = await getItemsByShopId(new ObjectId(shopId));
+
+        if (req.auth.scope.role === "CLIENT") {
+          const activeItems = items.filter((item) => item.active);
+          return reply.send(activeItems);
+        }
+
+        if (req.auth.scope.role !== "ADMIN") {
+          const userShopId = req.auth.scope.shopId?.toHexString();
+          if (shopId !== userShopId) {
+            return reply.status(403).send({
+              error: "No tienes acceso a los items de esta tienda",
+            });
+          }
+        }
+
+        reply.send(items);
+      } catch (error) {
+        reply.status(500).send({ error: (error as Error).message });
+        console.error("Error fetching items by shop:", error);
       }
     }
   );
@@ -100,7 +143,7 @@ export const itemsRoutes: FastifyPluginAsync = async (app) => {
         const created = await createItem(toCreate);
 
         console.log("[Items] Item creado:", created._id);
-        reply.status(201).send(created);
+        reply.status(200).send(created);
       } catch (error) {
         reply.status(400).send({ error: (error as Error).message });
         console.error("Error creating item:", error);

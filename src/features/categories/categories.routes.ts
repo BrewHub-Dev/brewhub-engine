@@ -43,8 +43,7 @@ export const categoriesRoutes: FastifyPluginAsync = async (app) => {
 
         const categoryCreated = await createCategory(toCreate);
 
-        console.log("[Categories] Category created:", categoryCreated._id);
-        reply.status(201).send(categoryCreated);
+        reply.status(200).send(categoryCreated);
       } catch (error) {
         reply.status(400).send({ error: (error as Error).message });
         console.error("Error creating category:", error);

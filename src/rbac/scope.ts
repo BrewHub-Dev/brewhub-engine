@@ -51,8 +51,8 @@ export function getUserDataScope(user: User | null): DataScope {
 
     case "CLIENT":
       return {
-        canViewAllShops: false,
-        canViewShop: false,
+        canViewAllShops: true,
+        canViewShop: true,
         onlyOwnBranch: false,
       };
 

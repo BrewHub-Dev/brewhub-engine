@@ -17,7 +17,7 @@ export const shopRoutes: FastifyPluginAsync = async (app) => {
         const shopData = shopSchema.parse(req.body);
         const shopCreated = await createShop(shopData);
         console.log("[Shops] Shop created:", shopCreated._id);
-        reply.status(201).send(shopCreated);
+        reply.status(200).send(shopCreated);
       } catch (error) {
         reply.status(400).send({ error: (error as Error).message });
         console.error("Error creating shop:", error);

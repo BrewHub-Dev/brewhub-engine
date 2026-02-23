@@ -1,8 +1,6 @@
 import { FastifyPluginAsync } from "fastify";
 import { createUser, getUsers, getUser, updateUser, deleteUser, updateUserPassword } from "./user.service";
 import { userSchema } from "./user.model";
-import { sign } from "jsonwebtoken";
-import { createSession } from "../sessions/session.service";
 import { AuthTokenPayload } from "@/auth/scope";
 import { requirePermission } from "../../middleware/permissions.middleware";
 import { applyScopeMiddleware } from "../../middleware/scope.middleware";
@@ -31,7 +29,7 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
         };
 
         console.log("[Users] New user created:", created._id);
-        reply.send({ user: created });
+        reply.status(200).send({ user: created });
       } catch (e) {
         reply.status(400).send({ error: (e as Error).message });
         console.error("Error creating user:", e);
@@ -64,7 +62,7 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
         });
 
         const users = await getUsers(req.auth.scope);
-        reply.send(users);
+        reply.status(200).send(users);
       } catch (e) {
         reply.status(500).send({ error: (e as Error).message });
         console.error("Error fetching users:", e);
@@ -89,7 +87,7 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
         if (!user) {
           return reply.status(404).send({ error: "User not found" });
         }
-        reply.send(user);
+        reply.status(200).send(user);
       } catch (e) {
         reply.status(500).send({ error: (e as Error).message });
         console.error("Error fetching current user:", e);
@@ -120,7 +118,7 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
         }
 
         console.log("[Users] User fetched:", id);
-        reply.send(user);
+        reply.status(200).send(user);
       } catch (e) {
         reply.status(500).send({ error: (e as Error).message });
         console.error("Error fetching user by ID:", e);
@@ -155,7 +153,7 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
         const updated = await updateUser(id, parsed);
 
         console.log("[Users] User updated:", id);
-        reply.send(updated);
+        reply.status(200).send(updated);
       } catch (e) {
         reply.status(400).send({ error: (e as Error).message });
         console.error("Error updating user:", e);
@@ -184,7 +182,7 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
         await updateUserPassword(userId, newPassword);
 
         console.log("[Users] Password updated for user:", userId);
-        reply.send({ ok: true, message: "Password updated successfully" });
+        reply.status(200).send({ ok: true, message: "Password updated successfully" });
       } catch (e) {
         reply.status(400).send({ error: (e as Error).message });
         console.error("Error updating password:", e);

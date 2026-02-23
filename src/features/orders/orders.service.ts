@@ -58,9 +58,10 @@ export function verifyQRTokenSignature(token: string): {
   try {
     const parts = token.split(".");
     if (parts.length !== 3) return null;
+    console.log(`[QR] Verifying token: ${token}`);
 
     const [orderIdStr, timestamp, providedHmac] = parts;
-
+    console.log(`[QR] Parsed token - orderId: ${orderIdStr}, timestamp: ${timestamp}`);
     // Check expiration
     const tokenTime = Number.parseInt(timestamp, 10);
     if (Date.now() - tokenTime > QR_TTL_SECONDS * 1000) return null;
@@ -279,7 +280,7 @@ export async function createAppOrder(
     const qr = generateQRToken(orderId);
     await orders.updateOne(
       { _id: orderId },
-      { $set: { qrTokenHash: qr.tokenHash } }
+      { $set: { qrToken: qr.token, qrTokenHash: qr.tokenHash } }
     );
 
     // Cache in Redis
@@ -357,7 +358,19 @@ export async function createPosOrder(
     };
 
     const result = await orders.insertOne(orderDoc);
-    return { ...orderDoc, _id: result.insertedId };
+    // Generate QR token
+    const qr = generateQRToken(result.insertedId);
+    await orders.updateOne(
+      { _id: result.insertedId },
+      { $set: { qrToken: qr.token, qrTokenHash: qr.tokenHash } }
+    );
+    // Cache in Redis
+    await redis.setex(
+      redisKeys.qrVerification(qr.tokenHash),
+      QR_TTL_SECONDS,
+      result.insertedId.toHexString()
+    );
+    return { ...orderDoc, _id: result.insertedId, qrToken: qr.token, qrTokenHash: qr.tokenHash };
   });
 }
 
@@ -381,22 +394,18 @@ export async function getOrderByQRToken(token: string) {
   const verified = verifyQRTokenSignature(token);
   if (!verified) return null;
 
-  // Try Redis cache first
   const cached = await redis.get(
     redisKeys.qrVerification(verified.tokenHash)
   );
-
   if (cached) {
     return getOrderById(new ObjectId(cached));
   }
 
-  // Fallback to DB
   const order = await db
     .collection("orders")
-    .findOne({ qrTokenHash: verified.tokenHash });
+    .findOne({ $or: [ { qrToken: token }, { qrTokenHash: verified.tokenHash } ] });
 
   if (order) {
-    // Refresh cache
     await redis.setex(
       redisKeys.qrVerification(verified.tokenHash),
       QR_TTL_SECONDS,
@@ -405,6 +414,36 @@ export async function getOrderByQRToken(token: string) {
   }
 
   return order;
+}
+
+export async function getOrdersByShopId(shopId: ObjectId) {
+  return db
+    .collection("orders")
+    .find({ ShopId: shopId })
+    .sort({ createdAt: -1 })
+    .toArray();
+}
+
+export async function getActiveOrdersByUserId(userId: ObjectId) {
+  return db
+    .collection("orders")
+    .find({
+      customerId: userId,
+      status: { $nin: ["completed", "cancelled"] },
+    })
+    .sort({ createdAt: -1 })
+    .toArray();
+}
+
+export async function getOrderCountsForDashboard(userId: ObjectId) {
+  const orders = db.collection("orders");
+  const total = await orders.countDocuments({ customerId: userId });
+  const completed = await orders.countDocuments({ customerId: userId, status: "completed" });
+  const inProduction = await orders.countDocuments({
+    customerId: userId,
+    status: { $in: ["confirmed", "preparing", "ready"] }
+  });
+  return { total, inProduction, completed };
 }
 
 // ─── State Transitions ──────────────────────────────────────
