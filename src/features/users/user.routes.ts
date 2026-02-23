@@ -30,13 +30,8 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
             : undefined,
         };
 
-        const token = sign(payload, JWT_SECRET, { expiresIn: "1d" });
-        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-        await createSession(created._id, token, expiresAt);
-        reply.setCookie("session", token, { httpOnly: true, path: "/" });
-
         console.log("[Users] New user created:", created._id);
-        reply.send({ user: created, token });
+        reply.send({ user: created });
       } catch (e) {
         reply.status(400).send({ error: (e as Error).message });
         console.error("Error creating user:", e);

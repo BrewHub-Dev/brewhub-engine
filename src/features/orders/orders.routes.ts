@@ -1,0 +1,424 @@
+import type { FastifyPluginAsync } from "fastify";
+import { ObjectId } from "mongodb";
+import { requirePermission } from "../../middleware/permissions.middleware";
+import { applyScopeMiddleware } from "../../middleware/scope.middleware";
+import {
+  createAppOrderSchema,
+  createPosOrderSchema,
+} from "./orders.model";
+import {
+  createAppOrder,
+  createPosOrder,
+  getOrderById,
+  getOrders,
+  getOrderByQRToken,
+  updateOrderStatus,
+  markOrderAsPaid,
+  refundOrder,
+  applyDiscount,
+  ensureOrderIndexes,
+} from "./orders.service";
+
+export const ordersRoutes: FastifyPluginAsync = async (app) => {
+  ensureOrderIndexes().catch((err) =>
+    console.error("[Orders] Failed to create indexes:", err)
+  );
+
+
+  app.post(
+    "/orders/app",
+    {
+      config: { action: "orders.create.app" },
+      preHandler: [app.authenticate, requirePermission("orders:create")],
+    },
+    async (req, reply) => {
+      try {
+        if (!req.auth) {
+          return reply.status(401).send({ error: "No auth context" });
+        }
+
+        if (req.auth.scope.role !== "CLIENT") {
+          return reply.status(403).send({
+            error: "Solo clientes pueden crear órdenes desde la app",
+          });
+        }
+
+        const parsed = createAppOrderSchema.parse(req.body);
+        const customerId = req.auth.identity.userId.toHexString();
+
+        const order = await createAppOrder(parsed, customerId);
+
+        console.log("[Orders] App order created:", order.orderNumber);
+        reply.status(201).send(order);
+      } catch (error) {
+        reply.status(400).send({ error: (error as Error).message });
+        console.error("Error creating app order:", error);
+      }
+    }
+  );
+
+  // ─── POST /orders/pos ── Staff creates order at POS ───────────────
+
+  app.post(
+    "/orders/pos",
+    {
+      config: { action: "orders.create.pos" },
+      preHandler: [
+        app.authenticate,
+        requirePermission("orders:create"),
+        requirePermission("pos:use"),
+      ],
+    },
+    async (req, reply) => {
+      try {
+        if (!req.auth) {
+          return reply.status(401).send({ error: "No auth context" });
+        }
+
+        const parsed = createPosOrderSchema.parse(req.body);
+        const staffId = req.auth.identity.userId.toHexString();
+        const staffRole = req.auth.scope.role;
+
+        // BRANCH_ADMIN: force their own branch
+        if (staffRole === "BRANCH_ADMIN") {
+          const branchId = req.auth.scope.branchId.toHexString();
+          if (parsed.BranchId !== branchId) {
+            return reply.status(403).send({
+              error: "Solo puedes crear órdenes en tu sucursal",
+            });
+          }
+        }
+
+        const order = await createPosOrder(parsed, staffId, staffRole);
+
+        console.log("[Orders] POS order created:", order.orderNumber);
+        reply.status(201).send(order);
+      } catch (error) {
+        reply.status(400).send({ error: (error as Error).message });
+        console.error("Error creating POS order:", error);
+      }
+    }
+  );
+
+  // ─── GET /orders ── List orders (scoped) ──────────────────────────
+
+  app.get(
+    "/orders",
+    {
+      config: { action: "orders.list" },
+      preHandler: [
+        app.authenticate,
+        requirePermission("orders:view"),
+        applyScopeMiddleware,
+      ],
+    },
+    async (req, reply) => {
+      try {
+        if (!req.auth) {
+          return reply.status(401).send({ error: "No auth context" });
+        }
+
+        let filter: Record<string, any> = {};
+
+        const role = req.auth.scope.role;
+
+        if (role === "CLIENT") {
+          filter.customerId = req.auth.identity.userId;
+        } else if (role === "BRANCH_ADMIN") {
+          filter.BranchId = req.auth.scope.branchId;
+        } else if (role === "SHOP_ADMIN") {
+          filter.ShopId = req.auth.scope.shopId;
+          // Optionally narrow to branch
+          const branchHeader = req.headers["x-branch-id"] as string | undefined;
+          if (branchHeader) {
+            filter.BranchId = new ObjectId(branchHeader);
+          }
+        } else if (role === "ADMIN") {
+          const shopHeader = req.headers["x-shop-id"] as string | undefined;
+          if (!shopHeader) {
+            return reply.status(400).send({
+              error: "x-shop-id header is required for ADMIN",
+            });
+          }
+          filter.ShopId = new ObjectId(shopHeader);
+          const branchHeader = req.headers["x-branch-id"] as string | undefined;
+          if (branchHeader) {
+            filter.BranchId = new ObjectId(branchHeader);
+          }
+        }
+
+        // Optional query filters
+        const qs = req.query as Record<string, string>;
+        if (qs.status) filter.status = qs.status;
+        if (qs.paymentStatus) filter.paymentStatus = qs.paymentStatus;
+
+        const orders = await getOrders(filter);
+        reply.send(orders);
+      } catch (error) {
+        reply.status(500).send({ error: (error as Error).message });
+        console.error("Error listing orders:", error);
+      }
+    }
+  );
+
+  // ─── GET /orders/:id ── Get order by ID ───────────────────────────
+
+  app.get(
+    "/orders/:id",
+    {
+      config: { action: "orders.get" },
+      preHandler: [
+        app.authenticate,
+        requirePermission("orders:view"),
+        applyScopeMiddleware,
+      ],
+    },
+    async (req, reply) => {
+      try {
+        if (!req.auth) {
+          return reply.status(401).send({ error: "No auth context" });
+        }
+
+        const { id } = req.params as { id: string };
+        const order = await getOrderById(new ObjectId(id));
+        if (!order) {
+          return reply.status(404).send({ error: "Orden no encontrada" });
+        }
+
+        // Scope validation
+        const role = req.auth.scope.role;
+        if (role === "CLIENT") {
+          if (
+            order.customerId?.toString() !==
+            req.auth.identity.userId.toHexString()
+          ) {
+            return reply.status(403).send({ error: "No tienes acceso a esta orden" });
+          }
+        } else if (role === "BRANCH_ADMIN") {
+          if (
+            order.BranchId.toString() !==
+            req.auth.scope.branchId.toHexString()
+          ) {
+            return reply.status(403).send({ error: "No tienes acceso a esta orden" });
+          }
+        } else if (role === "SHOP_ADMIN") {
+          if (
+            order.ShopId.toString() !== req.auth.scope.shopId.toHexString()
+          ) {
+            return reply.status(403).send({ error: "No tienes acceso a esta orden" });
+          }
+        }
+
+        reply.send(order);
+      } catch (error) {
+        reply.status(500).send({ error: (error as Error).message });
+        console.error("Error fetching order:", error);
+      }
+    }
+  );
+
+  // ─── POST /orders/verify-qr ── Verify QR and get order ───────────
+
+  app.post(
+    "/orders/verify-qr",
+    {
+      config: { action: "orders.verify-qr" },
+      preHandler: [app.authenticate, requirePermission("pos:use")],
+    },
+    async (req, reply) => {
+      try {
+        const { qrToken } = req.body as { qrToken: string };
+        if (!qrToken) {
+          return reply.status(400).send({ error: "qrToken is required" });
+        }
+
+        const order = await getOrderByQRToken(qrToken);
+        if (!order) {
+          return reply
+            .status(404)
+            .send({ error: "QR inválido o expirado" });
+        }
+
+        reply.send(order);
+      } catch (error) {
+        reply.status(500).send({ error: (error as Error).message });
+        console.error("Error verifying QR:", error);
+      }
+    }
+  );
+
+  // ─── State transitions ────────────────────────────────────────────
+
+  const transitionEndpoints = [
+    { path: "confirm", target: "confirmed" as const, permission: "pos:use" as const },
+    { path: "prepare", target: "preparing" as const, permission: "pos:use" as const },
+    { path: "ready", target: "ready" as const, permission: "pos:use" as const },
+    { path: "complete", target: "completed" as const, permission: "pos:use" as const },
+  ];
+
+  for (const endpoint of transitionEndpoints) {
+    app.patch(
+      `/orders/:id/${endpoint.path}`,
+      {
+        config: { action: `orders.${endpoint.path}` },
+        preHandler: [
+          app.authenticate,
+          requirePermission(endpoint.permission),
+        ],
+      },
+      async (req, reply) => {
+        try {
+          if (!req.auth) {
+            return reply.status(401).send({ error: "No auth context" });
+          }
+
+          const { id } = req.params as { id: string };
+          const { notes } = (req.body as { notes?: string }) || {};
+
+          const updated = await updateOrderStatus(
+            new ObjectId(id),
+            endpoint.target,
+            {
+              userId: req.auth.identity.userId.toHexString(),
+              role: req.auth.scope.role,
+            },
+            notes
+          );
+
+          console.log(
+            `[Orders] ${updated.orderNumber} → ${endpoint.target}`
+          );
+          reply.send(updated);
+        } catch (error) {
+          reply.status(400).send({ error: (error as Error).message });
+          console.error(`Error transitioning to ${endpoint.target}:`, error);
+        }
+      }
+    );
+  }
+
+  // ─── PATCH /orders/:id/cancel ─────────────────────────────────────
+
+  app.patch(
+    "/orders/:id/cancel",
+    {
+      config: { action: "orders.cancel" },
+      preHandler: [app.authenticate, requirePermission("orders:cancel")],
+    },
+    async (req, reply) => {
+      try {
+        if (!req.auth) {
+          return reply.status(401).send({ error: "No auth context" });
+        }
+
+        const { id } = req.params as { id: string };
+        const { notes } = (req.body as { notes?: string }) || {};
+
+        const updated = await updateOrderStatus(
+          new ObjectId(id),
+          "cancelled",
+          {
+            userId: req.auth.identity.userId.toHexString(),
+            role: req.auth.scope.role,
+          },
+          notes
+        );
+
+        console.log(`[Orders] ${updated.orderNumber} → cancelled`);
+        reply.send(updated);
+      } catch (error) {
+        reply.status(400).send({ error: (error as Error).message });
+        console.error("Error cancelling order:", error);
+      }
+    }
+  );
+
+  // ─── POST /orders/:id/pay ── Mark as paid ────────────────────────
+
+  app.post(
+    "/orders/:id/pay",
+    {
+      config: { action: "orders.pay" },
+      preHandler: [app.authenticate, requirePermission("pos:use")],
+    },
+    async (req, reply) => {
+      try {
+        const { id } = req.params as { id: string };
+        const { paymentMethod } = req.body as { paymentMethod: string };
+
+        if (!paymentMethod) {
+          return reply
+            .status(400)
+            .send({ error: "paymentMethod is required" });
+        }
+
+        const updated = await markOrderAsPaid(
+          new ObjectId(id),
+          paymentMethod
+        );
+
+        console.log(`[Orders] ${updated.orderNumber} → paid`);
+        reply.send(updated);
+      } catch (error) {
+        reply.status(400).send({ error: (error as Error).message });
+        console.error("Error marking order as paid:", error);
+      }
+    }
+  );
+
+  // ─── POST /orders/:id/refund ── Refund order ─────────────────────
+
+  app.post(
+    "/orders/:id/refund",
+    {
+      config: { action: "orders.refund" },
+      preHandler: [app.authenticate, requirePermission("pos:refund")],
+    },
+    async (req, reply) => {
+      try {
+        const { id } = req.params as { id: string };
+        const updated = await refundOrder(new ObjectId(id));
+
+        console.log(`[Orders] ${updated.orderNumber} → refunded`);
+        reply.send(updated);
+      } catch (error) {
+        reply.status(400).send({ error: (error as Error).message });
+        console.error("Error refunding order:", error);
+      }
+    }
+  );
+
+
+  app.post(
+    "/orders/:id/discount",
+    {
+      config: { action: "orders.discount" },
+      preHandler: [
+        app.authenticate,
+        requirePermission("pos:apply_discount"),
+      ],
+    },
+    async (req, reply) => {
+      try {
+        const { id } = req.params as { id: string };
+        const { amount } = req.body as { amount: number };
+
+        if (amount == null || amount < 0) {
+          return reply
+            .status(400)
+            .send({ error: "amount is required and must be >= 0" });
+        }
+
+        const updated = await applyDiscount(new ObjectId(id), amount);
+
+        console.log(
+          `[Orders] ${updated.orderNumber} discount applied: ${amount}`
+        );
+        reply.send(updated);
+      } catch (error) {
+        reply.status(400).send({ error: (error as Error).message });
+        console.error("Error applying discount:", error);
+      }
+    }
+  );
+};

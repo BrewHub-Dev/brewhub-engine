@@ -5,6 +5,7 @@ import AutoLoad from "@fastify/autoload";
 import * as path from "node:path";
 import mongoose from "mongoose";
 import { authPlugin } from "@/auth/auth.plugin";
+import { redis } from "@/db/redis";
 const app = Fastify({ logger: true });
 
 app.addHook("onRoute", (routeOptions: any) => {
@@ -45,7 +46,10 @@ const start = async () => {
     });
     console.log("Mongoose connected");
 
-    const address = await app.listen({ port: Number(PORT), host: "0.0.0.0" });
+    await redis.ping();
+    console.log("[Redis] Ping OK");
+
+    const address = await app.listen({ port: Number(PORT) });
     console.log(`Backend corriendo en ${address}`);
   } catch (err) {
     console.error(err);
