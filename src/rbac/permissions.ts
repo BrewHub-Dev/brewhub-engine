@@ -1,8 +1,3 @@
-/**
- * Sistema RBAC (Role-Based Access Control) para BrewHub Backend
- * Permisos granulares en formato "recurso:acción"
- */
-
 export type UserRole = "ADMIN" | "SHOP_ADMIN" | "BRANCH_ADMIN" | "CLIENT";
 
 export type Permission =
@@ -80,35 +75,30 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "users:delete",
     "users:assign_roles",
 
-    // Sucursales
     "branches:view",
     "branches:create",
     "branches:edit",
     "branches:delete",
 
-    // Tiendas
     "shops:view",
     "shops:create",
     "shops:edit",
     "shops:delete",
 
-    // Analíticas
+
     "analytics:view",
     "analytics:export",
     "analytics:view_all_shops",
     "analytics:view_shop",
 
-    // Órdenes
     "orders:view",
     "orders:view_all",
     "orders:create",
     "orders:cancel",
 
-    // Perfil
     "profile:view",
     "profile:edit",
 
-    // Categorías
     "categories:view",
     "categories:create",
     "categories:edit",

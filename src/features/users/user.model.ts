@@ -36,31 +36,64 @@ export const userSchema = z
     ShopId: objectIdSchema.optional(),
     BranchId: objectIdSchema.optional(),
 
+    tenantId: objectIdSchema.optional(),
+    tenants: z.array(
+      z.object({
+        tenantId: objectIdSchema,
+        role: z.enum(['CLIENT', 'SHOP_ADMIN', 'BRANCH_ADMIN']),
+        branchId: objectIdSchema.optional(),
+        addedAt: z.date().default(() => new Date()),
+      })
+    ).optional(),
+
     active: z.boolean().default(true),
 
     createdAt: z.date().optional(),
     updatedAt: z.date().optional(),
   })
   .superRefine((data, ctx) => {
-    if (data.role === "ADMIN") return;
-
-    if (data.role === "SHOP_ADMIN" && !data.ShopId) {
-      ctx.addIssue({
-        path: ["ShopId"],
-        code: "custom",
-        message: "ShopId is required for SHOP_ADMIN",
-      });
+    if (data.role === "ADMIN") {
+      return;
     }
 
-    if (
-      data.role === "BRANCH_ADMIN" &&
-      (!data.ShopId || !data.BranchId)
-    ) {
-      ctx.addIssue({
-        path: ["ShopId", "BranchId"],
-        code: "custom",
-        message: "ShopId and BranchId are required for BRANCH_ADMIN",
-      });
+    if (data.role === "SHOP_ADMIN") {
+      if (!data.tenantId && !data.ShopId) {
+        ctx.addIssue({
+          path: ["tenantId"],
+          code: "custom",
+          message: "tenantId is required for SHOP_ADMIN",
+        });
+      }
+
+      if (data.tenants && data.tenants.length === 0) {
+        ctx.addIssue({
+          path: ["tenants"],
+          code: "custom",
+          message: "SHOP_ADMIN must have at least one tenant",
+        });
+      }
+    }
+
+    if (data.role === "BRANCH_ADMIN") {
+      if (!data.tenantId && !data.ShopId) {
+        ctx.addIssue({
+          path: ["tenantId"],
+          code: "custom",
+          message: "tenantId is required for BRANCH_ADMIN",
+        });
+      }
+
+      const hasValidTenant = data.tenants?.some(
+        t => t.role === 'BRANCH_ADMIN' && t.branchId
+      );
+
+      if (!hasValidTenant && !data.BranchId) {
+        ctx.addIssue({
+          path: ["tenants"],
+          code: "custom",
+          message: "BRANCH_ADMIN must have a tenant with branchId",
+        });
+      }
     }
 
     if (data.role === "CLIENT") {

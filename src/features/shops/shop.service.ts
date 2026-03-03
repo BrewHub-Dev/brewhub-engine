@@ -14,10 +14,13 @@ export async function getShops() {
   return shops.find().toArray();
 }
 
-export async function getShopById(id: string) {
+export async function getShopById(id: string | ObjectId) {
   const shops = db.collection<Shop>("shops");
-  return shops.findOne({ _id: new ObjectId(id) });
+  const objectId = typeof id === 'string' ? new ObjectId(id) : id;
+  return shops.findOne({ _id: objectId });
 }
+
+export const findShopById = getShopById;
 
 export async function updateShop(id: string, updates: Partial<Shop>) {
   const shops = db.collection<Shop>("shops");
@@ -40,3 +43,4 @@ export async function deleteShop(id: string) {
   }
   return true;
 }
+

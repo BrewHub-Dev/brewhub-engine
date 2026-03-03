@@ -1,8 +1,6 @@
 import { z } from "zod";
 import { ObjectId } from "mongodb";
 
-// --- Enums ---
-
 export const orderStatusEnum = z.enum([
   "pending",
   "confirmed",
@@ -34,8 +32,6 @@ export const userRoleEnum = z.enum([
   "CLIENT",
 ]);
 
-// --- Sub-schemas ---
-
 export const orderModifierSchema = z.object({
   name: z.string().min(1),
   optionName: z.string().min(1),
@@ -61,9 +57,6 @@ export const statusHistoryEntrySchema = z.object({
   notes: z.string().optional(),
 });
 
-// --- Create order input schemas ---
-
-/** Items sent by the client when creating an order */
 export const createOrderItemInput = z.object({
   itemId: z.string(),
   quantity: z.number().int().positive(),
@@ -94,7 +87,6 @@ export const createPosOrderSchema = z
     paymentMethod: paymentMethodEnum,
     paymentStatus: paymentStatusEnum.optional(),
     customerId: z.string().optional(),
-    // Required when customerId is not provided — identifies the walk-in customer
     guestName: z.string().min(1).optional(),
     notes: z.string().optional(),
     discount: z.number().min(0).optional(),
@@ -104,8 +96,6 @@ export const createPosOrderSchema = z
     path: ["guestName"],
   });
 export type CreatePosOrderInput = z.infer<typeof createPosOrderSchema>;
-
-// --- Full order document (as stored in DB) ---
 
 export const orderSchema = z.object({
   orderNumber: z.string(),
@@ -129,9 +119,9 @@ export const orderSchema = z.object({
   qrTokenHash: z.string().optional(),
   notes: z.string().optional(),
   customerNotes: z.string().optional(),
-  guestName: z.string().optional(), // Walk-in customer name (POS only, when no customerId)
+  guestName: z.string().optional(),
   statusHistory: z.array(statusHistoryEntrySchema),
-  timezone: z.string().default("UTC"), // IANA timezone of the branch (e.g. "America/Mexico_City")
+  timezone: z.string().default("UTC"),
   createdAt: z.date(),
   updatedAt: z.date(),
   confirmedAt: z.date().optional(),
@@ -142,9 +132,6 @@ export const orderSchema = z.object({
 });
 export type Order = z.infer<typeof orderSchema>;
 
-// --- State machine ---
-
-/** Valid transitions: currentStatus → allowedNextStatuses */
 export const STATE_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   pending: ["confirmed", "cancelled"],
   confirmed: ["preparing", "cancelled"],

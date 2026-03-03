@@ -16,7 +16,6 @@ const QR_SECRET = process.env.QR_SECRET || process.env.JWT_SECRET || "";
 const QR_TTL_HOURS = 72;
 const QR_TTL_SECONDS = QR_TTL_HOURS * 60 * 60;
 
-// ─── Helpers ────────────────────────────────────────────────
 
 function roundNumber(
   num: number,
@@ -34,7 +33,6 @@ function roundNumber(
   }
 }
 
-// ─── QR Token ───────────────────────────────────────────────
 
 export function generateQRToken(orderId: ObjectId) {
   const orderIdStr = orderId.toHexString();
@@ -62,11 +60,9 @@ export function verifyQRTokenSignature(token: string): {
 
     const [orderIdStr, timestamp, providedHmac] = parts;
     console.log(`[QR] Parsed token - orderId: ${orderIdStr}, timestamp: ${timestamp}`);
-    // Check expiration
     const tokenTime = Number.parseInt(timestamp, 10);
     if (Date.now() - tokenTime > QR_TTL_SECONDS * 1000) return null;
 
-    // Verify HMAC
     const expectedHmac = crypto
       .createHmac("sha256", QR_SECRET)
       .update(`${orderIdStr}:${timestamp}`)
@@ -81,7 +77,6 @@ export function verifyQRTokenSignature(token: string): {
   }
 }
 
-// ─── Order Number ───────────────────────────────────────────
 
 export async function generateOrderNumber(
   branchId: ObjectId,
@@ -101,7 +96,6 @@ export async function generateOrderNumber(
   return `ORD-${dateStr}-${seq}`;
 }
 
-// ─── Snapshot Items ─────────────────────────────────────────
 
 export async function snapshotOrderItems(
   inputItems: CreateAppOrderInput["items"],
@@ -167,7 +161,6 @@ export async function snapshotOrderItems(
       name: dbItem.name,
       quantity: input.quantity,
       unitPrice: dbItem.price,
-      // Omit modifiers entirely when empty so MongoDB doesn't store null
       ...(resolvedModifiers.length > 0 ? { modifiers: resolvedModifiers } : {}),
       itemTotal,
       ...(input.notes ? { notes: input.notes } : {}),
@@ -177,7 +170,6 @@ export async function snapshotOrderItems(
   return snapshotted;
 }
 
-// ─── Calculate Totals ───────────────────────────────────────
 
 export async function calculateTotals(
   items: OrderItem[],
@@ -221,7 +213,6 @@ export async function calculateTotals(
   };
 }
 
-// ─── Create Order (App flow) ────────────────────────────────
 
 export async function createAppOrder(
   input: CreateAppOrderInput,
@@ -276,14 +267,12 @@ export async function createAppOrder(
     const result = await orders.insertOne(orderDoc);
     const orderId = result.insertedId;
 
-    // Generate QR token
     const qr = generateQRToken(orderId);
     await orders.updateOne(
       { _id: orderId },
       { $set: { qrToken: qr.token, qrTokenHash: qr.tokenHash } }
     );
 
-    // Cache in Redis
     await redis.setex(
       redisKeys.qrVerification(qr.tokenHash),
       QR_TTL_SECONDS,
@@ -299,7 +288,6 @@ export async function createAppOrder(
   });
 }
 
-// ─── Create Order (POS flow) ────────────────────────────────
 
 export async function createPosOrder(
   input: CreatePosOrderInput,
@@ -358,13 +346,12 @@ export async function createPosOrder(
     };
 
     const result = await orders.insertOne(orderDoc);
-    // Generate QR token
+
     const qr = generateQRToken(result.insertedId);
     await orders.updateOne(
       { _id: result.insertedId },
       { $set: { qrToken: qr.token, qrTokenHash: qr.tokenHash } }
     );
-    // Cache in Redis
     await redis.setex(
       redisKeys.qrVerification(qr.tokenHash),
       QR_TTL_SECONDS,
@@ -373,8 +360,6 @@ export async function createPosOrder(
     return { ...orderDoc, _id: result.insertedId, qrToken: qr.token, qrTokenHash: qr.tokenHash };
   });
 }
-
-// ─── Read ───────────────────────────────────────────────────
 
 export async function getOrderById(id: ObjectId) {
   return db.collection("orders").findOne({ _id: id });
@@ -387,8 +372,6 @@ export async function getOrders(filter: Record<string, any>) {
     .sort({ createdAt: -1 })
     .toArray();
 }
-
-// ─── QR Verification ────────────────────────────────────────
 
 export async function getOrderByQRToken(token: string) {
   const verified = verifyQRTokenSignature(token);
@@ -446,7 +429,6 @@ export async function getOrderCountsForDashboard(userId: ObjectId) {
   return { total, inProduction, completed };
 }
 
-// ─── State Transitions ──────────────────────────────────────
 
 export async function updateOrderStatus(
   orderId: ObjectId,
@@ -467,7 +449,6 @@ export async function updateOrderStatus(
     );
   }
 
-  // CLIENT can only cancel their own pending orders
   if (newStatus === "cancelled" && changedBy.role === "CLIENT") {
     if (order.customerId?.toString() !== changedBy.userId) {
       throw new Error("Cannot cancel another user's order");
@@ -479,9 +460,6 @@ export async function updateOrderStatus(
 
   const now = nowUtc();
   const timestampField = `${newStatus}At`;
-
-  // Optimistic locking: include current status in filter so concurrent
-  // transitions from the same state fail atomically instead of silently overwriting.
   const result = await orders.findOneAndUpdate(
     { _id: orderId, status: currentStatus },
     {
@@ -507,7 +485,6 @@ export async function updateOrderStatus(
   return result;
 }
 
-// ─── Payment ────────────────────────────────────────────────
 
 export async function markOrderAsPaid(
   orderId: ObjectId,
@@ -525,7 +502,6 @@ export async function markOrderAsPaid(
   }
 
   const now = nowUtc();
-  // Optimistic locking: only update if still unpaid and not cancelled.
   const result = await orders.findOneAndUpdate(
     { _id: orderId, paymentStatus: { $ne: "paid" }, status: { $ne: "cancelled" } },
     {
@@ -577,7 +553,6 @@ export async function applyDiscount(orderId: ObjectId, amount: number) {
   }
 
   const newTotal = Math.max(order.subtotal + order.tax - amount, 0);
-  // Optimistic locking: ensure order hasn't been completed or cancelled concurrently.
   const result = await orders.findOneAndUpdate(
     { _id: orderId, status: { $nin: ["completed", "cancelled"] } },
     {
@@ -594,7 +569,7 @@ export async function applyDiscount(orderId: ObjectId, amount: number) {
   return result;
 }
 
-// ─── Indexes Mongo Ensure Script────────────────────────────────────────────────
+
 export async function ensureOrderIndexes() {
   const orders = db.collection("orders");
   await orders.createIndexes([

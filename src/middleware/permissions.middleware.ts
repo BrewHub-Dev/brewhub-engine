@@ -1,15 +1,6 @@
 import { FastifyRequest, FastifyReply } from "fastify";
 import { hasAnyPermission, type Permission } from "../rbac";
 
-/**
- * Middleware para requerir uno o más permisos
- *
- * @example
- * app.get("/items", requirePermission("items:view"), handler)
- *
- * @example
- * app.delete("/items/:id", requirePermission("items:delete"), handler)
- */
 export function requirePermission(...permissions: Permission[]) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
     if (!request.auth) {
@@ -38,17 +29,10 @@ export function requirePermission(...permissions: Permission[]) {
       });
     }
 
-    // Usuario tiene permisos, continuar
     console.log(`[RBAC] Acceso concedido: ${userRole} → ${request.method} ${request.url}`);
   };
 }
 
-/**
- * Middleware para requerir un rol específico
- *
- * @example
- * app.get("/admin", requireRole("ADMIN"), handler)
- */
 export function requireRole(...roles: string[]) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
     if (!request.auth) {

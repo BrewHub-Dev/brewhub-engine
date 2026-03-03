@@ -5,11 +5,17 @@ import { Branches } from "@/features/branches/branches.model";
 export type UserRole = "ADMIN" | "SHOP_ADMIN" | "BRANCH_ADMIN" | "CLIENT";
 
 export interface AuthTokenPayload {
-  sub: string; // userId
+  sub: string;
   role: UserRole;
   shopId?: string;
   branchId?: string;
   defaultBranchId?: string;
+  tenantId?: string;
+  tenants?: Array<{
+    tenantId: string;
+    role: 'CLIENT' | 'SHOP_ADMIN' | 'BRANCH_ADMIN';
+    branchId?: string;
+  }>;
 }
 
 export interface AuthIdentity {
@@ -18,6 +24,12 @@ export interface AuthIdentity {
   shopId?: ObjectId;
   branchId?: ObjectId;
   defaultBranchId?: ObjectId;
+  tenantId?: ObjectId;
+  tenants?: Array<{
+    tenantId: ObjectId;
+    role: 'CLIENT' | 'SHOP_ADMIN' | 'BRANCH_ADMIN';
+    branchId?: ObjectId;
+  }>;
 }
 
 export type AdminScope = {

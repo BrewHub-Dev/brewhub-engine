@@ -60,8 +60,6 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
     }
   );
 
-  // ─── POST /orders/pos ── Staff creates order at POS ───────────────
-
   app.post(
     "/orders/pos",
     {
@@ -101,8 +99,6 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
       }
     }
   );
-
-  // ─── GET /orders ── List orders (scoped) ──────────────────────────
 
   app.get(
     "/orders",
@@ -148,7 +144,6 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
           }
         }
 
-        // Optional query filters
         const qs = req.query as Record<string, string>;
         if (qs.status) filter.status = qs.status;
         if (qs.paymentStatus) filter.paymentStatus = qs.paymentStatus;
@@ -161,8 +156,6 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
       }
     }
   );
-
-  // ─── GET /orders/:id ── Get order by ID ───────────────────────────
 
   app.get(
     "/orders/:id",
@@ -186,7 +179,6 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
           return reply.status(404).send({ error: "Orden no encontrada" });
         }
 
-        // Scope validation
         const role = req.auth.scope.role;
         if (role === "CLIENT") {
           if (
@@ -218,8 +210,6 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
     }
   );
 
-  // ─── POST /orders/verify-qr ── Verify QR and get order ───────────
-
   app.post(
     "/orders/verify-qr",
     {
@@ -247,8 +237,6 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
       }
     }
   );
-
-  // ─── State transitions ────────────────────────────────────────────
 
   const transitionEndpoints = [
     { path: "confirm", target: "confirmed" as const, permission: "pos:use" as const },
@@ -298,8 +286,6 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
     );
   }
 
-  // ─── PATCH /orders/:id/cancel ─────────────────────────────────────
-
   app.patch(
     "/orders/:id/cancel",
     {
@@ -334,8 +320,6 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
     }
   );
 
-  // ─── POST /orders/:id/pay ── Mark as paid ────────────────────────
-
   app.post(
     "/orders/:id/pay",
     {
@@ -366,8 +350,6 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
       }
     }
   );
-
-  // ─── POST /orders/:id/refund ── Refund order ─────────────────────
 
   app.post(
     "/orders/:id/refund",

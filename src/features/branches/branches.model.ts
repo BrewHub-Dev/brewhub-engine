@@ -14,7 +14,7 @@ export const branchesSchema = z.object({
     city: z.string().min(1),
     state: z.string().min(1),
     zip: z.string().min(1),
-    country: z.string().length(2), // ISO: MX, US
+    country: z.string().length(2),
   }),
 
   phone: z.string().min(7),

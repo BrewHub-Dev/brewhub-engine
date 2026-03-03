@@ -45,6 +45,12 @@ export const sessionRoutes: FastifyPluginAsync = async (app) => {
             ? user.BranchId.toString()
             : undefined,
         defaultBranchId: user.BranchId ? user.BranchId.toString() : undefined,
+        tenantId: user.tenantId?.toString(),
+        tenants: user.tenants?.map(t => ({
+          tenantId: t.tenantId.toString(),
+          role: t.role,
+          branchId: t.branchId?.toString(),
+        })),
       };
 
       const token = sign(payload, JWT_SECRET, { expiresIn: "1d" });

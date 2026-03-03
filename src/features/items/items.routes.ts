@@ -6,11 +6,6 @@ import { requirePermission } from "../../middleware/permissions.middleware";
 import { applyScopeMiddleware } from "../../middleware/scope.middleware";
 
 export const itemsRoutes: FastifyPluginAsync = async (app) => {
-  /**
-   * GET /items - Listar items
-   * Permisos: items:view
-   * Scope: Filtra por ShopId/BranchId según el rol
-   */
   app.get(
     "/items",
     {
@@ -52,11 +47,6 @@ export const itemsRoutes: FastifyPluginAsync = async (app) => {
     }
   );
 
-  /**
-   * GET /items/shop/:shopId - Listar items de una tienda específica
-   * Permisos: items:view
-   * Acceso: Clientes pueden ver items activos de cualquier tienda
-   */
   app.get(
     "/items/shop/:shopId",
     {
@@ -95,11 +85,6 @@ export const itemsRoutes: FastifyPluginAsync = async (app) => {
     }
   );
 
-  /**
-   * POST /items - Crear item
-   * Permisos: items:create
-   * Scope: Se crea en la ShopId del usuario
-   */
   app.post(
     "/items",
     {
@@ -151,11 +136,6 @@ export const itemsRoutes: FastifyPluginAsync = async (app) => {
     }
   );
 
-  /**
-   * GET /items/:id - Obtener item por ID
-   * Permisos: items:view
-   * Scope: Valida que el item pertenezca al scope del usuario
-   */
   app.get(
     "/items/:id",
     {
@@ -190,11 +170,6 @@ export const itemsRoutes: FastifyPluginAsync = async (app) => {
     }
   );
 
-  /**
-   * PATCH /items/:id - Actualizar item
-   * Permisos: items:edit
-   * Scope: Solo puede editar items de su scope
-   */
   app.patch(
     "/items/:id",
     {
@@ -231,11 +206,6 @@ export const itemsRoutes: FastifyPluginAsync = async (app) => {
     }
   );
 
-  /**
-   * DELETE /items/:id - Eliminar item
-   * Permisos: items:delete
-   * Scope: Solo puede eliminar items de su scope
-   */
   app.delete(
     "/items/:id",
     {

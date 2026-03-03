@@ -98,9 +98,7 @@ export const branchesRoutes: FastifyPluginAsync = async (app) => {
             branches = branches.filter((b) => b._id.toString() === branchId);
           }
         } else if (req.auth.scope.role === "CLIENT") {
-          // Clientes pueden ver todas las branches activas para ordenar
           branches = await getBranches();
-          // Filtrar solo branches activas
           branches = branches.filter((b) => b.active);
         } else {
           return reply.status(403).send({ error: "Not allowed to view branches" });
@@ -176,7 +174,6 @@ export const branchesRoutes: FastifyPluginAsync = async (app) => {
         }
 
         if (req.auth.scope.role === "CLIENT") {
-          // Clientes pueden ver cualquier branch activa
           if (!branch.active) {
             return reply.status(404).send({ error: "Branch not found" });
           }

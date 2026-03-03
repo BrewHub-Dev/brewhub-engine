@@ -226,3 +226,77 @@ export async function deleteUser(userId: string) {
 
   return true;
 }
+
+export async function updateUserTenants(
+  userId: ObjectId,
+  tenant: {
+    tenantId: ObjectId;
+    role: 'CLIENT' | 'SHOP_ADMIN' | 'BRANCH_ADMIN';
+    branchId?: ObjectId;
+  }
+): Promise<void> {
+  const users = db.collection("users");
+
+  const user = await users.findOne({ _id: userId });
+
+  if (!user) {
+    throw new Error("User not found");
+  }
+
+  const existingTenant = user.tenants?.find(
+    (t: any) => t.tenantId.toString() === tenant.tenantId.toString()
+  );
+
+  if (existingTenant) {
+    await users.updateOne(
+      { _id: userId, "tenants.tenantId": tenant.tenantId },
+      {
+        $set: {
+          "tenants.$.role": tenant.role,
+          "tenants.$.branchId": tenant.branchId,
+          updatedAt: new Date(),
+        },
+      }
+    );
+  } else {
+    await users.updateOne(
+      { _id: userId },
+      {
+        $push: {
+          tenants: {
+            tenantId: tenant.tenantId,
+            role: tenant.role,
+            branchId: tenant.branchId,
+            addedAt: new Date(),
+          },
+        } as any,
+        $set: {
+          updatedAt: new Date(),
+          ...(user.tenantId ? {} : { tenantId: tenant.tenantId })
+        },
+      }
+    );
+  }
+}
+
+export async function getUserTenants(userId: ObjectId): Promise<any[]> {
+  const users = db.collection("users");
+  const user = await users.findOne({ _id: userId });
+  return user?.tenants || [];
+}
+
+export async function removeUserTenant(
+  userId: ObjectId,
+  tenantId: ObjectId
+): Promise<void> {
+  const users = db.collection("users");
+  await users.updateOne(
+    { _id: userId },
+    {
+      $pull: {
+        tenants: { tenantId },
+      } as any,
+      $set: { updatedAt: new Date() },
+    }
+  );
+}

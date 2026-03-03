@@ -88,7 +88,6 @@ export async function updateItem(id: ObjectId, updates: Partial<Items>) {
     throw new Error("Item not found");
   }
 
-  // Obtener con categoría
   return getItemById(id);
 }
 

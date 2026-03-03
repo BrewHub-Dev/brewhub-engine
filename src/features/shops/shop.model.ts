@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const currencySchema = z.object({
-  code: z.string().length(3), // MXN, USD, EUR
+  code: z.string().length(3),
   symbol: z.string().min(1),
   exchangeRate: z.number().positive(),
   isDefault: z.boolean().optional(),

@@ -65,6 +65,12 @@ export const authPlugin: FastifyPluginAsync = async (app) => {
         defaultBranchId: payload.defaultBranchId
           ? new ObjectId(payload.defaultBranchId)
           : undefined,
+        tenantId: payload.tenantId ? new ObjectId(payload.tenantId) : undefined,
+        tenants: payload.tenants?.map(t => ({
+          tenantId: new ObjectId(t.tenantId),
+          role: t.role,
+          branchId: t.branchId ? new ObjectId(t.branchId) : undefined,
+        })),
       };
 
       const requestedBranchIdHeader =
