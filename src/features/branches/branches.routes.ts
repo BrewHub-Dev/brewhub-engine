@@ -98,7 +98,12 @@ export const branchesRoutes: FastifyPluginAsync = async (app) => {
             branches = branches.filter((b) => b._id.toString() === branchId);
           }
         } else if (req.auth.scope.role === "CLIENT") {
-          branches = await getBranches();
+          const tenantId = req.headers["x-tenant-id"] as string | undefined;
+          if (tenantId) {
+            branches = await getBranchesByShopId(tenantId);
+          } else {
+            branches = await getBranches();
+          }
           branches = branches.filter((b) => b.active);
         } else {
           return reply.status(403).send({ error: "Not allowed to view branches" });
