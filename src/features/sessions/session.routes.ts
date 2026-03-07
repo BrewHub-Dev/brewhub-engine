@@ -30,12 +30,6 @@ export const sessionRoutes: FastifyPluginAsync = async (app) => {
       const valid = await bcrypt.compare(password, user.password || "");
       if (!valid) return reply.status(401).send({ error: "Invalid credentials" });
 
-      const activeSessions = await findActiveSessionsByUser(user._id);
-      if (activeSessions.length > 0) {
-        return reply
-          .status(409)
-          .send({ error: "User already has an active session" });
-      }
       const payload: AuthTokenPayload = {
         sub: user._id.toString(),
         role: user.role,

@@ -43,12 +43,6 @@ export function applyScopeMiddleware(
     return applyScopeFilter(scope, baseQuery);
   };
 
-  console.log(`[SCOPE] Usuario: ${user.role}`, {
-    shopIds: scope.shopIds,
-    branchIds: scope.branchIds,
-    canViewAllShops: scope.canViewAllShops,
-  });
-
   done();
 }
 

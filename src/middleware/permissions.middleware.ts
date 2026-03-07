@@ -29,7 +29,7 @@ export function requirePermission(...permissions: Permission[]) {
       });
     }
 
-    console.log(`[RBAC] Acceso concedido: ${userRole} → ${request.method} ${request.url}`);
+    // Access granted — skip logging to reduce noise
   };
 }
 
@@ -52,6 +52,6 @@ export function requireRole(...roles: string[]) {
       });
     }
 
-    console.log(`[RBAC] Rol verificado: ${userRole} → ${request.method} ${request.url}`);
+    // Role verified — skip logging to reduce noise
   };
 }

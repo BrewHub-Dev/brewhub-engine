@@ -22,7 +22,7 @@ app.addHook("onRoute", (routeOptions: any) => {
 });
 
 app.register(cors, {
-  origin: process.env.CORS_ORIGIN || "http://localhost:3000",
+  origin: "*",
   credentials: true,
   methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
 });

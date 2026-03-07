@@ -33,7 +33,10 @@ export const authPlugin: FastifyPluginAsync = async (app) => {
   app.decorate(
     "authenticate",
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const token = request.cookies?.session;
+      const authHeader = request.headers.authorization;
+      const token =
+        request.cookies?.session ||
+        (authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined);
       if (!token) {
         reply.status(401).send({ error: "No session" });
         return;
