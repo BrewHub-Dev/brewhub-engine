@@ -4,6 +4,8 @@ import { redis, redisKeys } from "@/db/redis";
 import { withLock, lockKeys } from "@/db/lock";
 import { nowUtc, todayInZone } from "@/utils/date-time";
 import { ObjectId } from "mongodb";
+import { emitToUser } from "@/websockets";
+import { sendPushNotification } from "@/services/push.service";
 import {
   type OrderStatus,
   type OrderItem,
@@ -413,7 +415,7 @@ export async function getOrderByQRToken(token: string) {
 
   const order = await db
     .collection("orders")
-    .findOne({ $or: [ { qrToken: token }, { qrTokenHash: verified.tokenHash } ] });
+    .findOne({ $or: [{ qrToken: token }, { qrTokenHash: verified.tokenHash }] });
 
   if (order) {
     await redis.setex(
@@ -509,6 +511,39 @@ export async function updateOrderStatus(
   );
 
   if (!result) throw new Error("Order status changed concurrently, please retry");
+
+  try {
+    if (result.customerId) {
+      const customerStr = result.customerId.toString();
+
+      emitToUser(customerStr, "order:updated", {
+        orderId: result._id,
+        orderNumber: result.orderNumber,
+        status: result.status,
+      });
+
+      if (["preparing", "ready", "completed"].includes(result.status)) {
+        const users = db.collection("users");
+        const customer = await users.findOne({ _id: result.customerId });
+        if (customer && customer.pushTokens && customer.pushTokens.length > 0) {
+          const title = "Actualización de Orden";
+          const body = result.status === "preparing"
+            ? `Tu orden #${result.orderNumber} está siendo preparada.`
+            : result.status === "ready"
+              ? `¡Tu orden #${result.orderNumber} está lista para recoger!`
+              : `Tu orden #${result.orderNumber} ha sido Completada Muchas gracias por tu Compra, te esperamos pronto!`;
+
+          await sendPushNotification(customer.pushTokens, title, body, {
+            orderId: result._id,
+            status: result.status
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[Orders] Failed to dispatch notifications:", err);
+  }
+
   return result;
 }
 

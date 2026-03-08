@@ -1,5 +1,5 @@
 import { FastifyPluginAsync } from "fastify";
-import { createUser, getUsers, getUser, updateUser, deleteUser, updateUserPassword } from "./user.service";
+import { createUser, getUsers, getUser, updateUser, deleteUser, updateUserPassword, addPushToken } from "./user.service";
 import { userSchema } from "./user.model";
 import { AuthTokenPayload } from "@/auth/scope";
 import { requirePermission } from "../../middleware/permissions.middleware";
@@ -212,6 +212,35 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
       } catch (e) {
         reply.status(500).send({ error: (e as Error).message });
         console.error("Error deleting user:", e);
+      }
+    }
+  );
+
+  app.post(
+    "/users/push-token",
+    {
+      config: { action: "users.addPushToken" },
+      preHandler: [app.authenticate],
+    },
+    async (req, reply) => {
+      try {
+        if (!req.auth) {
+          return reply.status(401).send({ error: "No auth context" });
+        }
+
+        const { pushToken } = req.body as { pushToken: string };
+        if (!pushToken) {
+          return reply.status(400).send({ error: "pushToken is required" });
+        }
+
+        const userId = req.auth.identity.userId.toString();
+        await addPushToken(userId, pushToken);
+
+        console.log("[Users] Push token added for user:", userId);
+        reply.status(200).send({ ok: true, message: "Push token added successfully" });
+      } catch (e) {
+        reply.status(400).send({ error: (e as Error).message });
+        console.error("Error adding push token:", e);
       }
     }
   );

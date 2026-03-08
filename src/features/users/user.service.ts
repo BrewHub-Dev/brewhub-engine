@@ -135,15 +135,15 @@ export async function getUsers(scope: AuthScope) {
   const [branches, shops] = await Promise.all([
     branchIds.length
       ? db
-          .collection<BranchDocument>("branches")
-          .find({ _id: { $in: branchIds } })
-          .toArray()
+        .collection<BranchDocument>("branches")
+        .find({ _id: { $in: branchIds } })
+        .toArray()
       : [],
     shopIds.length
       ? db
-          .collection<ShopDocument>("shops")
-          .find({ _id: { $in: shopIds } })
-          .toArray()
+        .collection<ShopDocument>("shops")
+        .find({ _id: { $in: shopIds } })
+        .toArray()
       : [],
   ]);
 
@@ -225,6 +225,19 @@ export async function deleteUser(userId: string) {
   }
 
   return true;
+}
+
+export async function addPushToken(userId: string, pushToken: string) {
+  const users = db.collection<User>("users");
+  const result = await users.findOneAndUpdate(
+    { _id: new ObjectId(userId) },
+    { $addToSet: { pushTokens: pushToken } },
+    { returnDocument: "after" }
+  );
+  if (!result) {
+    throw new Error("User not found");
+  }
+  return result;
 }
 
 export async function updateUserTenants(

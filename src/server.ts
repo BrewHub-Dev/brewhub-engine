@@ -5,9 +5,9 @@ import AutoLoad from "@fastify/autoload";
 import * as path from "node:path";
 import mongoose from "mongoose";
 import os from "node:os";
-
 import { authPlugin } from "@/auth/auth.plugin";
 import { redis } from "@/db/redis";
+import { initWebSockets } from "./websockets";
 
 const PORT = Number(process.env.PORT) || 3001;
 
@@ -96,6 +96,10 @@ const start = async () => {
     });
 
     console.log(`Backend corriendo en ${address}`);
+
+    const corsOrigin = process.env.CORS_ORIGIN || "*";
+    initWebSockets(app.server, corsOrigin);
+    console.log("🚀 WebSockets listos en el servidor");
 
     printAvailableIPs();
   } catch (err) {

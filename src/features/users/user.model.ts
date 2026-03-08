@@ -36,6 +36,8 @@ export const userSchema = z
     ShopId: objectIdSchema.optional(),
     BranchId: objectIdSchema.optional(),
 
+    pushTokens: z.array(z.string()).optional(),
+
     tenantId: objectIdSchema.optional(),
     tenants: z.array(
       z.object({
