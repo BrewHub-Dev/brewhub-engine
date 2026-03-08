@@ -274,9 +274,6 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
             notes
           );
 
-          console.log(
-            `[Orders] ${updated.orderNumber} → ${endpoint.target}`
-          );
           reply.send(updated);
         } catch (error) {
           reply.status(400).send({ error: (error as Error).message });
@@ -391,12 +388,7 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
             .status(400)
             .send({ error: "amount is required and must be >= 0" });
         }
-
         const updated = await applyDiscount(new ObjectId(id), amount);
-
-        console.log(
-          `[Orders] ${updated.orderNumber} discount applied: ${amount}`
-        );
         reply.send(updated);
       } catch (error) {
         reply.status(400).send({ error: (error as Error).message });

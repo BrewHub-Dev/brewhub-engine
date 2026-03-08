@@ -53,14 +53,6 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
           return reply.status(401).send({ error: "No auth context" });
         }
 
-        console.log("[Users] GET /users", {
-          role: req.auth.scope.role,
-          shopId:
-            req.auth.scope.role !== "ADMIN" && req.auth.scope.role !== "CLIENT"
-              ? req.auth.scope.shopId?.toHexString()
-              : undefined,
-        });
-
         const users = await getUsers(req.auth.scope);
         reply.status(200).send(users);
       } catch (e) {

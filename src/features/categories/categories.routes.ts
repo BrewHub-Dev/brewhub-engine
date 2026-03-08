@@ -87,11 +87,6 @@ export const categoriesRoutes: FastifyPluginAsync = async (app) => {
           return reply.status(400).send({ error: "ShopId is required" });
         }
 
-        console.log("[Categories] GET /categories", {
-          role: req.auth.scope.role,
-          shopId: shopId.toHexString(),
-        });
-
         const categories = await getCategoriesByShopId(shopId);
         reply.send(categories);
       } catch (error) {

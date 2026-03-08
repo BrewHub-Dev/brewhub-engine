@@ -366,11 +366,38 @@ export async function getOrderById(id: ObjectId) {
 }
 
 export async function getOrders(filter: Record<string, any>) {
-  return db
+  const orders = await db
     .collection("orders")
     .find(filter)
     .sort({ createdAt: -1 })
     .toArray();
+
+  const customerIds = [...new Set(orders.map((o) => o.customerId).filter(Boolean))];
+
+  const users = await db
+    .collection("users")
+    .find({ _id: { $in: customerIds } }, { projection: { password: 0 } })
+    .toArray();
+
+  const usersById = Object.fromEntries(users.map((u) => [u._id.toString(), u]));
+
+  const branches = await db
+    .collection("branches")
+    .find(
+      { _id: { $in: orders.map((o) => o.BranchId) } },
+      { projection: { name: 1 } }
+    )
+    .toArray();
+
+  const branchesById = Object.fromEntries(
+    branches.map((b) => [b._id.toString(), b.name])
+  );
+
+  return orders.map((order) => ({
+    ...order,
+    customer: usersById[order.customerId?.toString()] ?? null,
+    branchName: branchesById[order.BranchId.toString()] ?? "Unknown Branch",
+  }));
 }
 
 export async function getOrderByQRToken(token: string) {

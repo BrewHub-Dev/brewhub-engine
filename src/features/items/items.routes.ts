@@ -20,8 +20,6 @@ export const itemsRoutes: FastifyPluginAsync = async (app) => {
       try {
         const query = req.scopedQuery?.() || {};
 
-        console.log("[Items] GET /items query:", query);
-
         if (query.ShopId) {
           const shopId = new ObjectId(query.ShopId);
           const items = await getItemsByShopId(shopId);

@@ -49,7 +49,7 @@ export const branchesRoutes: FastifyPluginAsync = async (app) => {
         const toCreate = { ...parsed, ShopId: shopId } as any;
 
         const branchCreated = await createBranch(toCreate);
-        console.log("[Branches] Branch created:", branchCreated._id);
+
         reply.status(200).send(branchCreated);
       } catch (error) {
         reply.status(400).send({ error: (error as Error).message });
