@@ -5,7 +5,6 @@ import {
   deleteSessionByToken,
   findSessionsByUser,
   createSession,
-  findActiveSessionsByUser,
   deleteSessionsByUser,
 } from "./session.service";
 import { findUserByEmail } from "../users/user.service";
