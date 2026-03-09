@@ -11,19 +11,6 @@ const createPaymentIntentSchema = z.object({
 });
 
 export const stripeRoutes: FastifyPluginAsync = async (app) => {
-  app.addContentTypeParser(
-    "application/json",
-    { parseAs: "buffer" },
-    (req, body, done) => {
-      (req as any).rawBody = body;
-      try {
-        done(null, JSON.parse(body.toString()));
-      } catch (err) {
-        done(err as Error, undefined);
-      }
-    }
-  );
-
   app.post(
     "/stripe/create-payment-intent",
     {
@@ -47,55 +34,66 @@ export const stripeRoutes: FastifyPluginAsync = async (app) => {
     }
   );
 
-  app.post(
-    "/stripe/webhook",
-    { config: { action: "stripe.webhook" } },
-    async (req, reply) => {
-      const sig = req.headers["stripe-signature"];
-      const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  // Sub-plugin aislado para el webhook: recibe el body como Buffer raw
+  app.register(async (webhookApp) => {
+    webhookApp.removeAllContentTypeParsers();
+    webhookApp.addContentTypeParser(
+      "application/json",
+      { parseAs: "buffer" },
+      (_req, body, done) => done(null, body)
+    );
 
-      if (!sig || !webhookSecret) {
-        return reply.status(400).send({ error: "Missing stripe signature or webhook secret" });
-      }
+    webhookApp.post(
+      "/stripe/webhook",
+      { config: { action: "stripe.webhook" } },
+      async (req, reply) => {
+        const sig = req.headers["stripe-signature"];
+        const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
-      let event: ReturnType<typeof stripe.webhooks.constructEvent>;
-      try {
-        event = stripe.webhooks.constructEvent(
-          (req as any).rawBody,
-          sig,
-          webhookSecret
-        );
-      } catch (err: any) {
-        return reply.status(400).send({ error: `Webhook Error: ${err.message}` });
-      }
+        if (!sig || !webhookSecret) {
+          return reply.status(400).send({ error: "Missing stripe signature or webhook secret" });
+        }
 
-      switch (event.type) {
-        case "payment_intent.succeeded": {
-          const paymentIntent = event.data.object as any;
-          console.log("[Stripe] Payment succeeded:", paymentIntent.id, "| orderId:", paymentIntent.metadata?.orderId);
+        let event: Awaited<ReturnType<typeof stripe.webhooks.constructEventAsync>>;
+        try {
+          event = await stripe.webhooks.constructEventAsync(
+            req.body as Buffer,
+            sig,
+            webhookSecret
+          );
+        } catch (err: any) {
+          console.error("[Stripe] Webhook signature error:", err.message);
+          return reply.status(400).send({ error: `Webhook Error: ${err.message}` });
+        }
 
-          const orderIdStr = paymentIntent.metadata?.orderId;
-          if (orderIdStr) {
-            try {
-              const orderId = new ObjectId(orderIdStr);
-              await markOrderAsPaid(orderId, "card");
-              console.log(`[Stripe] Successfully marked order ${orderIdStr} as paid`);
-            } catch (err: any) {
-              console.error(`[Stripe] Error marking order ${orderIdStr} as paid:`, err.message);
+        switch (event.type) {
+          case "payment_intent.succeeded": {
+            const paymentIntent = event.data.object as any;
+            console.log("[Stripe] Payment succeeded:", paymentIntent.id, "| orderId:", paymentIntent.metadata?.orderId);
+
+            const orderIdStr = paymentIntent.metadata?.orderId;
+            if (orderIdStr) {
+              try {
+                const orderId = new ObjectId(orderIdStr);
+                await markOrderAsPaid(orderId, "card");
+                console.log(`[Stripe] Successfully marked order ${orderIdStr} as paid`);
+              } catch (err: any) {
+                console.error(`[Stripe] Error marking order ${orderIdStr} as paid:`, err.message);
+              }
             }
+            break;
           }
-          break;
+          case "payment_intent.payment_failed": {
+            const paymentIntent = event.data.object as any;
+            console.warn("[Stripe] Payment failed:", paymentIntent.id);
+            break;
+          }
+          default:
+            console.log("[Stripe] Unhandled event type:", event.type);
         }
-        case "payment_intent.payment_failed": {
-          const paymentIntent = event.data.object as any;
-          console.warn("[Stripe] Payment failed:", paymentIntent.id);
-          break;
-        }
-        default:
-          console.log("[Stripe] Unhandled event type:", event.type);
-      }
 
-      return { received: true };
-    }
-  );
+        return { received: true };
+      }
+    );
+  });
 };

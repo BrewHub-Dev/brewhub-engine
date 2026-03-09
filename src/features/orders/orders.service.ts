@@ -79,23 +79,22 @@ export function verifyQRTokenSignature(token: string): {
   }
 }
 
-
 export async function generateOrderNumber(
   branchId: ObjectId,
   timezone: string
 ): Promise<string> {
   const dateStr = todayInZone(timezone).replace(/-/g, "");
-  const branchIdStr = branchId.toHexString();
+  const branchShort = branchId.toHexString().slice(-4).toUpperCase();
+  const counterId = `orders:${branchId.toHexString()}:${dateStr}`;
 
-  const key = redisKeys.dailyOrderCount(branchIdStr, dateStr);
-  const count = await redis.incr(key);
+  const result = await db.collection("counters").findOneAndUpdate(
+    { _id: counterId as any },
+    { $inc: { seq: 1 } },
+    { upsert: true, returnDocument: "after" }
+  );
 
-  if (count === 1) {
-    await redis.expire(key, 48 * 60 * 60);
-  }
-
-  const seq = count.toString().padStart(4, "0");
-  return `ORD-${dateStr}-${seq}`;
+  const seq = (result!.seq as number).toString().padStart(4, "0");
+  return `ORD-${dateStr}-${branchShort}-${seq}`;
 }
 
 
