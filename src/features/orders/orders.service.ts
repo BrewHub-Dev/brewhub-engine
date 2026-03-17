@@ -83,7 +83,7 @@ export async function generateOrderNumber(
   branchId: ObjectId,
   timezone: string
 ): Promise<string> {
-  const dateStr = todayInZone(timezone).replace(/-/g, "");
+  const dateStr = todayInZone(timezone).replaceAll(/-/g, "");
   const branchShort = branchId.toHexString().slice(-4).toUpperCase();
   const counterId = `orders:${branchId.toHexString()}:${dateStr}`;
 
@@ -419,6 +419,27 @@ export async function getOrderByQRToken(token: string) {
   if (order) {
     await redis.setex(
       redisKeys.qrVerification(verified.tokenHash),
+      QR_TTL_SECONDS,
+      order._id.toHexString()
+    );
+  }
+
+  return order;
+}
+
+export async function getOrderByQRTokenHash(hash: string) {
+  const cached = await redis.get(redisKeys.qrVerification(hash));
+  if (cached) {
+    return getOrderById(new ObjectId(cached));
+  }
+
+  const order = await db
+    .collection("orders")
+    .findOne({ qrTokenHash: hash });
+
+  if (order) {
+    await redis.setex(
+      redisKeys.qrVerification(hash),
       QR_TTL_SECONDS,
       order._id.toHexString()
     );

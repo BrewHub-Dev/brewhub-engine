@@ -35,7 +35,7 @@ export const userRoleEnum = z.enum([
 export const orderModifierSchema = z.object({
   name: z.string().min(1),
   optionName: z.string().min(1),
-  extraPrice: z.number().min(0),
+  extraPrice: z.number().min(0).optional().nullable(),
 });
 
 export const orderItemSchema = z.object({

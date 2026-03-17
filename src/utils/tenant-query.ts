@@ -1,6 +1,5 @@
-import { Filter } from "mongodb";
 import { AuthScope } from "@/auth/scope";
-import { ObjectId } from "mongodb";
+import { ObjectId, Filter } from "mongodb";
 
 export function filterByTenantScope<T>(
   scope: AuthScope,

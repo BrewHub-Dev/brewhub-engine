@@ -1,14 +1,19 @@
 import { Types } from "mongoose";
+import { randomBytes } from "node:crypto";
 import { Session } from "./session.model";
+
+export const generateRefreshToken = () => randomBytes(40).toString("hex");
 
 export const createSession = async (
   userId: Types.ObjectId | string,
   token: string,
-  expiresAt: Date
+  expiresAt: Date,
+  refreshToken: string,
+  refreshExpiresAt: Date
 ) => {
   try {
     const user = new Types.ObjectId(userId);
-    const session = await Session.create({ user: user, token, expiresAt });
+    const session = await Session.create({ user, token, expiresAt, refreshToken, refreshExpiresAt });
     return session;
   } catch (err) {
     console.error("createSession error:", err);
@@ -18,6 +23,24 @@ export const createSession = async (
 
 export const findSessionByToken = async (token: string) => {
   return Session.findOne({ token }).exec();
+};
+
+export const findSessionByRefreshToken = async (refreshToken: string) => {
+  return Session.findOne({ refreshToken }).exec();
+};
+
+export const rotateSession = async (
+  refreshToken: string,
+  newToken: string,
+  newExpiresAt: Date,
+  newRefreshToken: string,
+  newRefreshExpiresAt: Date
+) => {
+  return Session.findOneAndUpdate(
+    { refreshToken },
+    { token: newToken, expiresAt: newExpiresAt, refreshToken: newRefreshToken, refreshExpiresAt: newRefreshExpiresAt },
+    { new: true }
+  ).exec();
 };
 
 export const deleteSessionByToken = async (token: string) => {

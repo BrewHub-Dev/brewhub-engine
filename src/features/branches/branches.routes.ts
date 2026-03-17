@@ -243,7 +243,6 @@ export const branchesRoutes: FastifyPluginAsync = async (app) => {
         const parsed = branchesSchema.partial().parse(req.body);
         const updated = await updateBranch(id, parsed);
 
-        console.log("[Branches] Branch updated:", id);
         reply.send(updated);
       } catch (error) {
         reply.status(400).send({ error: (error as Error).message });
@@ -285,8 +284,6 @@ export const branchesRoutes: FastifyPluginAsync = async (app) => {
         }
 
         await deleteBranch(id);
-
-        console.log("[Branches] Branch deleted:", id);
         reply.status(204).send();
       } catch (error) {
         reply.status(500).send({ error: (error as Error).message });

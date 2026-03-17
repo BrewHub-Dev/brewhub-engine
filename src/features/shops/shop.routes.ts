@@ -63,6 +63,25 @@ export const shopRoutes: FastifyPluginAsync = async (app) => {
   );
 
   app.get(
+    "/shops/:id/branding",
+    {
+      config: { action: "shops.branding" },
+    },
+    async (req, reply) => {
+      try {
+        const { id } = req.params as { id: string };
+        const shop = await getShopById(id);
+        if (!shop) {
+          return reply.status(404).send({ error: "Shop not found" });
+        }
+        reply.send({ name: shop.name, image: shop.image ?? null });
+      } catch (error) {
+        reply.status(500).send({ error: (error as Error).message });
+      }
+    }
+  );
+
+  app.get(
     "/shops/:id",
     {
       config: { action: "shops.get" },

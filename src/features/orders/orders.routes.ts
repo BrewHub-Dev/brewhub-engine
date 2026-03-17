@@ -12,6 +12,7 @@ import {
   getOrderById,
   getOrders,
   getOrderByQRToken,
+  getOrderByQRTokenHash,
   updateOrderStatus,
   markOrderAsPaid,
   refundOrder,
@@ -234,6 +235,34 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
       } catch (error) {
         reply.status(500).send({ error: (error as Error).message });
         console.error("Error verifying QR:", error);
+      }
+    }
+  );
+
+  app.post(
+    "/orders/verify-qr-hash",
+    {
+      config: { action: "orders.verify-qr-hash" },
+      preHandler: [app.authenticate, requirePermission("pos:use")],
+    },
+    async (req, reply) => {
+      try {
+        const { qrTokenHash } = req.body as { qrTokenHash: string };
+        if (!qrTokenHash) {
+          return reply.status(400).send({ error: "qrTokenHash is required" });
+        }
+
+        const order = await getOrderByQRTokenHash(qrTokenHash);
+        if (!order) {
+          return reply
+            .status(404)
+            .send({ error: "QR inválido o expirado" });
+        }
+
+        reply.send(order);
+      } catch (error) {
+        reply.status(500).send({ error: (error as Error).message });
+        console.error("Error verifying QR hash:", error);
       }
     }
   );

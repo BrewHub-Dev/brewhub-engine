@@ -1,13 +1,17 @@
 import { FastifyPluginAsync } from "fastify";
-import { sign } from "jsonwebtoken";
+import { sign, decode } from "jsonwebtoken";
 import * as bcrypt from "bcryptjs";
 import {
   deleteSessionByToken,
   findSessionsByUser,
   createSession,
   deleteSessionsByUser,
+  findSessionByRefreshToken,
+  rotateSession,
+  generateRefreshToken,
 } from "./session.service";
 import { findUserByEmail } from "../users/user.service";
+import { getShopById } from "../shops/shop.service";
 import { AuthTokenPayload } from "@/auth/scope";
 
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -46,11 +50,30 @@ export const sessionRoutes: FastifyPluginAsync = async (app) => {
         })),
       };
 
-      const token = sign(payload, JWT_SECRET, { expiresIn: "1d" });
-      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-      await createSession(user._id, token, expiresAt);
+      const token = sign(payload, JWT_SECRET, { expiresIn: "1h" });
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+      const refreshToken = generateRefreshToken();
+      const refreshExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      await createSession(user._id, token, expiresAt, refreshToken, refreshExpiresAt);
       reply.setCookie("session", token, { httpOnly: true, path: "/" });
-      reply.send({ ok: true, user, token });
+      reply.setCookie("refreshToken", refreshToken, { httpOnly: true, path: "/sessions/refresh" });
+
+      let tenant = null;
+      const shopId = user.tenantId || user.ShopId;
+      if (shopId) {
+        const shop = await getShopById(shopId);
+        if (shop) {
+          tenant = {
+            tenantId: shop._id.toString(),
+            shopName: shop.name,
+            shopLogo: shop.image || null,
+            branchId: user.BranchId?.toString() || null,
+          };
+        }
+      }
+
+      const { password: _, ...userWithoutPassword } = user;
+      reply.send({ ok: true, user: userWithoutPassword, token, refreshToken, tenant });
     } catch (e) {
       reply.status(500).send({ error: (e as Error).message });
     }
@@ -77,6 +100,51 @@ export const sessionRoutes: FastifyPluginAsync = async (app) => {
       await deleteSessionByToken(token);
       reply.clearCookie("session");
       reply.send({ ok: true });
+    } catch (e) {
+      reply.status(500).send({ error: (e as Error).message });
+    }
+  });
+
+  app.post("/sessions/refresh", { config: { action: "sessions.refresh" } }, async (req, reply) => {
+    try {
+      const refreshToken =
+        req.cookies?.refreshToken ||
+        (req.body as { refreshToken?: string })?.refreshToken;
+
+      if (!refreshToken) {
+        return reply.status(401).send({ error: "No refresh token" });
+      }
+
+      const session = await findSessionByRefreshToken(refreshToken);
+      if (!session || session.refreshExpiresAt <= new Date()) {
+        return reply.status(401).send({ error: "Invalid or expired refresh token" });
+      }
+
+      const decoded = decode(session.token) as AuthTokenPayload | null;
+      if (!decoded) {
+        return reply.status(401).send({ error: "Could not decode existing token" });
+      }
+
+      const payload: AuthTokenPayload = {
+        sub: decoded.sub,
+        role: decoded.role,
+        shopId: decoded.shopId,
+        branchId: decoded.branchId,
+        defaultBranchId: decoded.defaultBranchId,
+        tenantId: decoded.tenantId,
+        tenants: decoded.tenants,
+      };
+
+      const newToken = sign(payload, JWT_SECRET, { expiresIn: "1h" });
+      const newExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
+      const newRefreshToken = generateRefreshToken();
+      const newRefreshExpiresAt = new Date(session.refreshExpiresAt); // keep original 30d expiry
+
+      await rotateSession(refreshToken, newToken, newExpiresAt, newRefreshToken, newRefreshExpiresAt);
+
+      reply.setCookie("session", newToken, { httpOnly: true, path: "/" });
+      reply.setCookie("refreshToken", newRefreshToken, { httpOnly: true, path: "/sessions/refresh" });
+      reply.send({ ok: true, token: newToken, refreshToken: newRefreshToken });
     } catch (e) {
       reply.status(500).send({ error: (e as Error).message });
     }

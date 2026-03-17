@@ -34,7 +34,6 @@ export const stripeRoutes: FastifyPluginAsync = async (app) => {
     }
   );
 
-  // Sub-plugin aislado para el webhook: recibe el body como Buffer raw
   app.register(async (webhookApp) => {
     webhookApp.removeAllContentTypeParsers();
     webhookApp.addContentTypeParser(

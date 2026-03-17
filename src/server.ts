@@ -99,7 +99,7 @@ const start = async () => {
 
     const corsOrigin = process.env.CORS_ORIGIN || "*";
     initWebSockets(app.server, corsOrigin);
-    console.log("🚀 WebSockets listos en el servidor");
+    console.log("WebSockets listos en el servidor");
 
     printAvailableIPs();
   } catch (err) {

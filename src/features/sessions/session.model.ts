@@ -4,6 +4,8 @@ export interface ISession extends Document {
   user: Types.ObjectId;
   token: string;
   expiresAt: Date;
+  refreshToken: string;
+  refreshExpiresAt: Date;
 }
 
 const sessionSchema = new Schema<ISession>(
@@ -11,6 +13,8 @@ const sessionSchema = new Schema<ISession>(
     user: { type: Types.ObjectId, ref: "User", required: true },
     token: { type: String, required: true },
     expiresAt: { type: Date, required: true },
+    refreshToken: { type: String, required: true },
+    refreshExpiresAt: { type: Date, required: true },
   },
   { timestamps: true }
 );

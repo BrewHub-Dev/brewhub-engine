@@ -1,7 +1,6 @@
 import { FastifyPluginAsync } from "fastify";
 import { createUser, getUsers, getUser, updateUser, deleteUser, updateUserPassword, addPushToken } from "./user.service";
 import { userSchema } from "./user.model";
-import { AuthTokenPayload } from "@/auth/scope";
 import { requirePermission } from "../../middleware/permissions.middleware";
 import { applyScopeMiddleware } from "../../middleware/scope.middleware";
 
@@ -15,18 +14,6 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
       try {
         const user = userSchema.parse(req.body);
         const created = await createUser(user);
-        const payload: AuthTokenPayload = {
-          sub: created._id.toString(),
-          role: created.role,
-          shopId: created.ShopId ? created.ShopId.toString() : undefined,
-          branchId:
-            created.role === "BRANCH_ADMIN" && created.BranchId
-              ? created.BranchId.toString()
-              : undefined,
-          defaultBranchId: created.BranchId
-            ? created.BranchId.toString()
-            : undefined,
-        };
 
         console.log("[Users] New user created:", created._id);
         reply.status(200).send({ user: created });

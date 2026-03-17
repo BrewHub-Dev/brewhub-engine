@@ -1,8 +1,10 @@
 import { FastifyPluginAsync } from "fastify";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
+import { ObjectId } from "mongodb";
 import { db } from "@/db/mongo";
 import { validateInvitation, acceptInvitation } from "../invitations/invitation.service";
+import { getShopById } from "../shops/shop.service";
 
 const registerSchema = z.object({
   name: z.string().min(1, "El nombre es requerido"),
@@ -79,6 +81,82 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       });
     } catch (error: any) {
       console.error("Error en registro:", error);
+
+      if (error.name === "ZodError") {
+        return reply.status(400).send({
+          error: "Datos inválidos",
+          details: error.errors,
+        });
+      }
+
+      reply.status(500).send({
+        error: error.message || "Error al registrar usuario",
+      });
+    }
+  });
+
+  const registerDirectSchema = z.object({
+    name: z.string().min(1, "El nombre es requerido"),
+    emailAddress: z.email("Email inválido"),
+    password: z.string().min(6, "La contraseña debe tener al menos 6 caracteres"),
+    tenantId: z.string().min(1, "El tenantId es requerido"),
+  });
+
+  app.post("/auth/register-direct", async (req, reply) => {
+    try {
+      const body = registerDirectSchema.parse(req.body);
+      const { name, emailAddress, password, tenantId } = body;
+
+      const shop = await getShopById(tenantId);
+      if (!shop) {
+        return reply.status(400).send({ error: "Tienda no encontrada" });
+      }
+
+      const users = db.collection("users");
+      const existingUser = await users.findOne({ emailAddress });
+
+      if (existingUser) {
+        return reply.status(400).send({
+          error: "Este correo electrónico ya está registrado",
+        });
+      }
+
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const tenantObjectId = new ObjectId(tenantId);
+
+      const newUser: any = {
+        name,
+        lastName: "",
+        username: emailAddress.split("@")[0],
+        emailAddress,
+        password: hashedPassword,
+        phone: "",
+        role: "CLIENT",
+        active: true,
+        tenantId: tenantObjectId,
+        tenants: [
+          {
+            tenantId: tenantObjectId,
+            role: "CLIENT" as const,
+            addedAt: new Date(),
+          },
+        ],
+        ShopId: tenantObjectId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const result = await users.insertOne(newUser);
+
+      console.log("[Auth] New user registered (direct):", result.insertedId);
+
+      reply.status(201).send({
+        ok: true,
+        message: "Usuario registrado exitosamente",
+        userId: result.insertedId,
+      });
+    } catch (error: any) {
+      console.error("Error en registro directo:", error);
 
       if (error.name === "ZodError") {
         return reply.status(400).send({
