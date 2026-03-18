@@ -21,6 +21,8 @@ import {
   getOrdersByShopId,
   getActiveOrdersByUserId,
   getOrderCountsForDashboard,
+  getDashboardStats,
+  getAdminDashboardStats,
 } from "./orders.service";
 
 export const ordersRoutes: FastifyPluginAsync = async (app) => {
@@ -28,6 +30,69 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
     console.error("[Orders] Failed to create indexes:", err)
   );
 
+
+  app.get(
+    "/orders/dashboard-stats",
+    {
+      config: { action: "orders.dashboard_stats" },
+      preHandler: [app.authenticate, requirePermission("orders:view"), applyScopeMiddleware],
+    },
+    async (req, reply) => {
+      try {
+        if (!req.auth) return reply.status(401).send({ error: "No auth context" });
+
+        const role = req.auth.scope.role;
+        const filter: { ShopId?: ObjectId; BranchId?: ObjectId } = {};
+
+        if (role === "BRANCH_ADMIN") {
+          filter.ShopId = req.auth.scope.shopId;
+          filter.BranchId = req.auth.scope.branchId;
+        } else if (role === "SHOP_ADMIN") {
+          filter.ShopId = req.auth.scope.shopId;
+          const branchHeader = req.headers["x-branch-id"] as string | undefined;
+          if (branchHeader) filter.BranchId = new ObjectId(branchHeader);
+        } else if (role === "ADMIN") {
+          const shopHeader = req.headers["x-shop-id"] as string | undefined;
+          if (!shopHeader) return reply.status(400).send({ error: "x-shop-id header required for ADMIN" });
+          filter.ShopId = new ObjectId(shopHeader);
+          const branchHeader = req.headers["x-branch-id"] as string | undefined;
+          if (branchHeader) filter.BranchId = new ObjectId(branchHeader);
+        } else {
+          return reply.status(403).send({ error: "Not allowed" });
+        }
+
+        const stats = await getDashboardStats(filter);
+        reply.send(stats);
+      } catch (error) {
+        reply.status(500).send({ error: (error as Error).message });
+        console.error("Error fetching dashboard stats:", error);
+      }
+    }
+  );
+
+  app.get(
+    "/admin/dashboard-stats",
+    {
+      config: { action: "admin.dashboard_stats" },
+      preHandler: [app.authenticate, requirePermission("shops:view")],
+    },
+    async (req, reply) => {
+      try {
+        if (!req.auth) return reply.status(401).send({ error: "No auth context" });
+        if (req.auth.scope.role !== "ADMIN") {
+          return reply.status(403).send({ error: "Solo ADMIN puede acceder a estas estadísticas" });
+        }
+        const [adminStats, dashboardStats] = await Promise.all([
+          getAdminDashboardStats(),
+          getDashboardStats({}), // empty filter = all orders across all shops
+        ]);
+        reply.send({ ...adminStats, ...dashboardStats });
+      } catch (error) {
+        reply.status(500).send({ error: (error as Error).message });
+        console.error("Error fetching admin dashboard stats:", error);
+      }
+    }
+  );
 
   app.post(
     "/orders/app",

@@ -4,7 +4,7 @@ import { redis, redisKeys } from "@/db/redis";
 import { withLock, lockKeys } from "@/db/lock";
 import { nowUtc, todayInZone } from "@/utils/date-time";
 import { ObjectId } from "mongodb";
-import { emitToUser } from "@/websockets";
+import { emitToUser, emitToBranch, emitToShop } from "@/websockets";
 import { sendPushNotification } from "@/services/push.service";
 import {
   type OrderStatus,
@@ -533,6 +533,21 @@ export async function updateOrderStatus(
   if (!result) throw new Error("Order status changed concurrently, please retry");
 
   try {
+    const orderPayload = {
+      orderId: result._id,
+      orderNumber: result.orderNumber,
+      status: result.status,
+      BranchId: result.BranchId?.toString(),
+      ShopId: result.ShopId?.toString(),
+    };
+
+    if (result.BranchId) {
+      emitToBranch(result.BranchId.toString(), "order:statusChanged", orderPayload);
+    }
+    if (result.ShopId) {
+      emitToShop(result.ShopId.toString(), "order:statusChanged", orderPayload);
+    }
+
     if (result.customerId) {
       const customerStr = result.customerId.toString();
 
@@ -651,6 +666,183 @@ export async function applyDiscount(orderId: ObjectId, amount: number) {
   return result;
 }
 
+
+export async function getDashboardStats(filter: {
+  ShopId?: ObjectId;
+  BranchId?: ObjectId;
+}) {
+  const col = db.collection("orders");
+
+  const now = new Date();
+  const todayStart = new Date(now);
+  todayStart.setHours(0, 0, 0, 0);
+
+  const yesterdayStart = new Date(todayStart);
+  yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+
+  const weekStart = new Date(todayStart);
+  weekStart.setDate(weekStart.getDate() - 6);
+
+  const base: Record<string, any> = {};
+  if (filter.ShopId) base.ShopId = filter.ShopId;
+  if (filter.BranchId) base.BranchId = filter.BranchId;
+
+  let todayRevenue = 0;
+  let todayOrdersCount = 0;
+  const todayCustomers = new Set<string>();
+
+  let yesterdayRevenue = 0;
+  let yesterdayOrdersCount = 0;
+
+  const weeklyRevenueByDay = new Map<string, number>();
+
+  const productsMap = new Map<string, { quantity: number; revenue: number }>();
+
+  const recentBuffer: any[] = [];
+  const RECENT_LIMIT = 10;
+
+  const DAY_NAMES = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+
+  const pendingCount = await col.countDocuments({ ...base, status: "pending" });
+
+  const cursor = col
+    .find(
+      { ...base, createdAt: { $gte: weekStart }, status: { $nin: ["cancelled"] } },
+      { projection: { total: 1, createdAt: 1, status: 1, customerId: 1, guestName: 1, items: 1, orderNumber: 1 } }
+    )
+    .sort({ createdAt: -1 });
+
+  for await (const order of cursor) {
+    const orderDate = order.createdAt as Date;
+    const total = (order.total as number) ?? 0;
+
+    if (recentBuffer.length < RECENT_LIMIT) {
+      recentBuffer.push(order);
+    }
+
+    const isToday = orderDate >= todayStart;
+    const isYesterday = !isToday && orderDate >= yesterdayStart;
+
+    if (isToday) {
+      todayRevenue += total;
+      todayOrdersCount++;
+      const key = order.customerId?.toString() ?? order.guestName;
+      if (key) todayCustomers.add(key);
+    } else if (isYesterday) {
+      yesterdayRevenue += total;
+      yesterdayOrdersCount++;
+    }
+
+    const dayLabel = DAY_NAMES[orderDate.getDay()];
+    weeklyRevenueByDay.set(dayLabel, (weeklyRevenueByDay.get(dayLabel) ?? 0) + total);
+
+    if (Array.isArray(order.items)) {
+      for (const item of order.items as any[]) {
+        const name = item.name as string;
+        const qty = (item.quantity as number) ?? 1;
+        const itemTotal = (item.itemTotal as number) ?? 0;
+        const entry = productsMap.get(name);
+        if (entry) {
+          entry.quantity += qty;
+          entry.revenue += itemTotal;
+        } else {
+          productsMap.set(name, { quantity: qty, revenue: itemTotal });
+        }
+      }
+    }
+  }
+
+  const orderedDays = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+  const weeklySales = orderedDays.map((day) => ({
+    day,
+    value: +((weeklyRevenueByDay.get(day) ?? 0)).toFixed(2),
+  }));
+
+  const topProducts = [...productsMap.entries()]
+    .sort((a, b) => b[1].quantity - a[1].quantity)
+    .slice(0, 5)
+    .map(([name, data]) => ({
+      name,
+      quantity: data.quantity,
+      revenue: +data.revenue.toFixed(2),
+    }));
+
+  const revenueTrend =
+    yesterdayRevenue > 0
+      ? +(((todayRevenue - yesterdayRevenue) / yesterdayRevenue) * 100).toFixed(1)
+      : 0;
+  const ordersTrend =
+    yesterdayOrdersCount > 0
+      ? +(((todayOrdersCount - yesterdayOrdersCount) / yesterdayOrdersCount) * 100).toFixed(1)
+      : 0;
+
+  const customerOids = recentBuffer.map((o) => o.customerId).filter(Boolean);
+  const customersMap = new Map<string, string>();
+  if (customerOids.length > 0) {
+    const usersCursor = db
+      .collection("users")
+      .find({ _id: { $in: customerOids } }, { projection: { name: 1, lastName: 1 } });
+    for await (const user of usersCursor) {
+      customersMap.set(user._id.toString(), `${user.name} ${user.lastName}`);
+    }
+  }
+
+  const recentOrders = recentBuffer.map((o) => ({
+    id: (o.orderNumber as string) ?? o._id.toString(),
+    customer: customersMap.get(o.customerId?.toString()) ?? (o.guestName as string) ?? "Cliente",
+    items: (o.items as any[])?.length ?? 0,
+    total: +((o.total as number) ?? 0).toFixed(2),
+    status: o.status as string,
+    createdAt: o.createdAt,
+  }));
+
+  return {
+    today: {
+      revenue: +todayRevenue.toFixed(2),
+      ordersCount: todayOrdersCount,
+      uniqueCustomers: todayCustomers.size,
+    },
+    yesterday: {
+      revenue: +yesterdayRevenue.toFixed(2),
+      ordersCount: yesterdayOrdersCount,
+    },
+    trends: { revenue: revenueTrend, orders: ordersTrend },
+    pendingCount,
+    weeklySales,
+    topProducts,
+    recentOrders,
+  };
+}
+
+export async function getAdminDashboardStats() {
+  const now = new Date();
+  const todayStart = new Date(now);
+  todayStart.setHours(0, 0, 0, 0);
+
+  const [shopsCount, usersCount, sessionsCount] = await Promise.all([
+    db.collection("shops").countDocuments(),
+    db.collection("users").countDocuments(),
+    db.collection("sessions").countDocuments({ active: true }).catch(() => 0),
+  ]);
+
+  let platformRevenueToday = 0;
+  const todayCursor = db
+    .collection("orders")
+    .find(
+      { createdAt: { $gte: todayStart }, status: { $nin: ["cancelled"] } },
+      { projection: { total: 1 } }
+    );
+  for await (const order of todayCursor) {
+    platformRevenueToday += (order.total as number) ?? 0;
+  }
+
+  return {
+    totalShops: shopsCount,
+    totalUsers: usersCount,
+    activeSessions: sessionsCount,
+    platformRevenueToday: +platformRevenueToday.toFixed(2),
+  };
+}
 
 export async function ensureOrderIndexes() {
   const orders = db.collection("orders");
