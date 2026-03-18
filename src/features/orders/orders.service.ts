@@ -366,39 +366,67 @@ export async function getOrderById(id: ObjectId) {
   return db.collection("orders").findOne({ _id: id });
 }
 
-export async function getOrders(filter: Record<string, any>) {
-  const orders = await db
-    .collection("orders")
-    .find(filter)
-    .sort({ createdAt: -1 })
-    .toArray();
 
-  const customerIds = [...new Set(orders.map((o) => o.customerId).filter(Boolean))];
+export async function* getOrders(filter: Record<string, any>) {
+  const ordersCursor = db.collection("orders").find(filter).sort({ createdAt: -1 });
 
-  const users = await db
+  for await (const order of ordersCursor) {
+    yield order;
+  }
+}
+
+async function* getUsersByIds(ids: string[]) {
+  if (ids.length === 0) return;
+
+  const usersCursor = db
     .collection("users")
-    .find({ _id: { $in: customerIds } }, { projection: { password: 0 } })
-    .toArray();
+    .find({ _id: { $in: ids.map((id) => new ObjectId(id)) } }, { projection: { password: 0 } });
 
-  const usersById = Object.fromEntries(users.map((u) => [u._id.toString(), u]));
+  for await (const user of usersCursor) {
+    yield user;
+  }
+}
 
-  const branches = await db
+async function* getBranchesByIds(ids: string[]) {
+  if (ids.length === 0) return;
+
+  const branchesCursor = db
     .collection("branches")
-    .find(
-      { _id: { $in: orders.map((o) => o.BranchId) } },
-      { projection: { name: 1 } }
-    )
-    .toArray();
+    .find({ _id: { $in: ids.map((id) => new ObjectId(id)) } }, { projection: { name: 1 } });
 
-  const branchesById = Object.fromEntries(
-    branches.map((b) => [b._id.toString(), b.name])
-  );
+  for await (const branch of branchesCursor) {
+    yield branch;
+  }
+}
 
-  return orders.map((order) => ({
-    ...order,
-    customer: usersById[order.customerId?.toString()] ?? null,
-    branchName: branchesById[order.BranchId.toString()] ?? "Unknown Branch",
-  }));
+export async function* getOrdersWithDetails(filter: Record<string, any>) {
+  const customerIdsSet = new Set<string>();
+  const branchIdsSet = new Set<string>();
+  const ordersBuffer: any[] = [];
+
+  for await (const order of getOrders(filter)) {
+    ordersBuffer.push(order);
+    if (order.customerId) customerIdsSet.add(order.customerId.toString());
+    if (order.BranchId) branchIdsSet.add(order.BranchId.toString());
+  }
+
+  const usersById: Record<string, any> = {};
+  for await (const user of getUsersByIds([...customerIdsSet])) {
+    usersById[user._id.toString()] = user;
+  }
+
+  const branchesById: Record<string, string> = {};
+  for await (const branch of getBranchesByIds([...branchIdsSet])) {
+    branchesById[branch._id.toString()] = branch.name;
+  }
+
+  for (const order of ordersBuffer) {
+    yield {
+      ...order,
+      customer: usersById[order.customerId?.toString()] ?? null,
+      branchName: branchesById[order.BranchId?.toString()] ?? "Unknown Branch",
+    };
+  }
 }
 
 export async function getOrderByQRToken(token: string) {
@@ -448,23 +476,19 @@ export async function getOrderByQRTokenHash(hash: string) {
   return order;
 }
 
-export async function getOrdersByShopId(shopId: ObjectId) {
-  return db
-    .collection("orders")
-    .find({ ShopId: shopId })
-    .sort({ createdAt: -1 })
-    .toArray();
+export async function* getOrdersByShopId(shopId: ObjectId) {
+  for await (const order of db.collection("orders").find({ ShopId: shopId }).sort({ createdAt: -1 })) {
+    yield order;
+  }
 }
 
-export async function getActiveOrdersByUserId(userId: ObjectId) {
-  return db
-    .collection("orders")
-    .find({
-      customerId: userId,
-      status: { $nin: ["completed", "cancelled"] },
-    })
-    .sort({ createdAt: -1 })
-    .toArray();
+export async function* getActiveOrdersByUserId(userId: ObjectId) {
+  for await (const order of db.collection("orders").find({
+    customerId: userId,
+    status: { $nin: ["completed", "cancelled"] },
+  }).sort({ createdAt: -1 })) {
+    yield order;
+  }
 }
 
 export async function getOrderCountsForDashboard(userId: ObjectId) {

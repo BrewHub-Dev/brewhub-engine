@@ -9,9 +9,10 @@ export async function createShop(shop: Shop) {
   return { ...validated, _id: result.insertedId };
 }
 
-export async function getShops() {
-  const shops = db.collection<Shop>("shops");
-  return shops.find().toArray();
+export async function* getShops() {
+  for await (const shop of db.collection("shops").find({})) {
+    yield shop;
+  }
 }
 
 export async function getShopById(id: string | ObjectId) {

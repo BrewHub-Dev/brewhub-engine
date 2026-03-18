@@ -11,6 +11,12 @@ import {
 import { requirePermission } from "../../middleware/permissions.middleware";
 import { applyScopeMiddleware } from "../../middleware/scope.middleware";
 
+async function collect<T>(gen: AsyncIterable<T>): Promise<T[]> {
+  const arr: T[] = [];
+  for await (const item of gen) arr.push(item);
+  return arr;
+}
+
 export const branchesRoutes: FastifyPluginAsync = async (app) => {
   app.post(
     "/branches",
@@ -79,9 +85,9 @@ export const branchesRoutes: FastifyPluginAsync = async (app) => {
         if (req.auth.scope.role === "ADMIN") {
           const header = req.headers["x-shop-id"] as string | undefined;
           if (!header) {
-            branches = await getBranches();
+            branches = await collect(getBranches());
           } else {
-            branches = await getBranchesByShopId(header);
+            branches = await collect(getBranchesByShopId(header));
           }
         } else if (
           req.auth.scope.role === "SHOP_ADMIN" ||
@@ -91,7 +97,7 @@ export const branchesRoutes: FastifyPluginAsync = async (app) => {
           if (!shopId) {
             return reply.status(400).send({ error: "ShopId not found in scope" });
           }
-          branches = await getBranchesByShopId(shopId);
+          branches = await collect(getBranchesByShopId(shopId));
 
           if (req.auth.scope.role === "BRANCH_ADMIN") {
             const branchId = req.auth.scope.branchId.toHexString();
@@ -100,9 +106,9 @@ export const branchesRoutes: FastifyPluginAsync = async (app) => {
         } else if (req.auth.scope.role === "CLIENT") {
           const tenantId = req.headers["x-tenant-id"] as string | undefined;
           if (tenantId) {
-            branches = await getBranchesByShopId(tenantId);
+            branches = await collect(getBranchesByShopId(tenantId));
           } else {
-            branches = await getBranches();
+            branches = await collect(getBranches());
           }
           branches = branches.filter((b) => b.active);
         } else {
@@ -131,7 +137,7 @@ export const branchesRoutes: FastifyPluginAsync = async (app) => {
           return reply.status(401).send({ error: "No auth context" });
         }
 
-        const branches = await getBranchesByShopId(shopId);
+        const branches = await collect(getBranchesByShopId(shopId));
 
         if (req.auth.scope.role === "CLIENT") {
           const activeBranches = branches.filter((b) => b.active);

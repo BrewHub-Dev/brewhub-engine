@@ -10,7 +10,7 @@ import {
   createAppOrder,
   createPosOrder,
   getOrderById,
-  getOrders,
+  getOrdersWithDetails,
   getOrderByQRToken,
   getOrderByQRTokenHash,
   updateOrderStatus,
@@ -24,6 +24,12 @@ import {
   getDashboardStats,
   getAdminDashboardStats,
 } from "./orders.service";
+
+async function collect<T>(gen: AsyncIterable<T>): Promise<T[]> {
+  const arr: T[] = [];
+  for await (const item of gen) arr.push(item);
+  return arr;
+}
 
 export const ordersRoutes: FastifyPluginAsync = async (app) => {
   ensureOrderIndexes().catch((err) =>
@@ -189,6 +195,7 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
         if (role === "CLIENT") {
           filter.customerId = req.auth.identity.userId;
         } else if (role === "BRANCH_ADMIN") {
+          filter.ShopId = req.auth.scope.shopId;
           filter.BranchId = req.auth.scope.branchId;
         } else if (role === "SHOP_ADMIN") {
           filter.ShopId = req.auth.scope.shopId;
@@ -214,7 +221,7 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
         if (qs.status) filter.status = qs.status;
         if (qs.paymentStatus) filter.paymentStatus = qs.paymentStatus;
 
-        const orders = await getOrders(filter);
+        const orders = await collect(getOrdersWithDetails(filter));
         reply.send(orders);
       } catch (error) {
         reply.status(500).send({ error: (error as Error).message });
@@ -508,9 +515,7 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
         }
 
         const { shopId } = req.params as { shopId: string };
-        const orders = await getOrdersByShopId(new ObjectId(shopId));
-
-        console.log(`[Orders] Fetched orders for shop ${shopId}: ${orders.length} orders`);
+        const orders = await collect(getOrdersByShopId(new ObjectId(shopId)));
         reply.send(orders);
       } catch (error) {
         reply.status(500).send({ error: (error as Error).message });
@@ -536,8 +541,8 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
         }
         
         const { userId } = req.params as { userId: string };
-        const orders = await getActiveOrdersByUserId(new ObjectId(userId));
-        
+        const orders = await collect(getActiveOrdersByUserId(new ObjectId(userId)));
+
         if (req.auth.scope.role === 'CLIENT') {
           const authUserId = req.auth.identity.userId.toHexString();
           if (userId !== authUserId) {

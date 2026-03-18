@@ -19,14 +19,16 @@ export async function createBranch(branch: Branches) {
   return { ...validated, _id: result.insertedId };
 }
 
-export async function getBranches() {
-  const branches = db.collection("branches");
-  return branches.find().toArray();
+export async function* getBranches() {
+  for await (const branch of db.collection("branches").find({})) {
+    yield branch;
+  }
 }
 
-export async function getBranchesByShopId(shopId: string) {
-  const branches = db.collection("branches");
-  return branches.find({ ShopId: new ObjectId(shopId) }).toArray();
+export async function* getBranchesByShopId(shopId: string) {
+  for await (const branch of db.collection("branches").find({ ShopId: new ObjectId(shopId) })) {
+    yield branch;
+  }
 }
 
 export async function getBranchById(id: string) {

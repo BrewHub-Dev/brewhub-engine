@@ -9,12 +9,10 @@ export async function createCategory(category: Categories) {
   return { ...validated, _id: result.insertedId };
 }
 
-export async function getCategoriesByShopId(ShopId: ObjectId) {
-  const categories = db.collection("categories");
-  const result = await categories
-    .find({ ShopId })
-    .toArray();
-  return result;
+export async function* getCategoriesByShopId(ShopId: ObjectId) {
+  for await (const category of db.collection("categories").find({ ShopId })) {
+    yield category;
+  }
 }
 
 export async function updateCategory(id: ObjectId, update: Partial<Categories>) {

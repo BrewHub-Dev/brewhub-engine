@@ -1,9 +1,14 @@
 import { FastifyPluginAsync } from "fastify";
-import { ObjectId } from "mongodb";
 import { shopSchema } from "./shop.model";
 import { createShop, getShops, getShopById, updateShop, deleteShop } from "./shop.service";
 import { requirePermission } from "../../middleware/permissions.middleware";
 import { applyScopeMiddleware } from "../../middleware/scope.middleware";
+
+async function collect<T>(gen: AsyncIterable<T>): Promise<T[]> {
+  const arr: T[] = [];
+  for await (const item of gen) arr.push(item);
+  return arr;
+}
 
 export const shopRoutes: FastifyPluginAsync = async (app) => {
   app.post(
@@ -41,7 +46,7 @@ export const shopRoutes: FastifyPluginAsync = async (app) => {
           return reply.status(401).send({ error: "No auth context" });
         }
 
-        const shops = await getShops();
+        const shops = await collect(getShops());
 
         if (req.auth.scope.role !== "ADMIN") {
           const userShopId =

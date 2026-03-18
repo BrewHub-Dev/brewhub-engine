@@ -5,6 +5,12 @@ import { ObjectId } from "mongodb";
 import { requirePermission } from "@/middleware/permissions.middleware";
 import { applyScopeMiddleware } from "@/middleware/scope.middleware";
 
+async function collect<T>(gen: AsyncIterable<T>): Promise<T[]> {
+  const arr: T[] = [];
+  for await (const item of gen) arr.push(item);
+  return arr;
+}
+
 export const categoriesRoutes: FastifyPluginAsync = async (app) => {
   app.post(
     "/categories",
@@ -87,7 +93,7 @@ export const categoriesRoutes: FastifyPluginAsync = async (app) => {
           return reply.status(400).send({ error: "ShopId is required" });
         }
 
-        const categories = await getCategoriesByShopId(shopId);
+        const categories = await collect(getCategoriesByShopId(shopId));
         reply.send(categories);
       } catch (error) {
         reply.status(500).send({ error: (error as Error).message });
