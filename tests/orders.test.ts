@@ -1,3 +1,4 @@
+/// <reference types="bun-types" />
 import { describe, beforeAll, afterAll, beforeEach, it, expect } from "bun:test";
 import { ObjectId } from "mongodb";
 import { db } from "../src/db/mongo";
@@ -403,6 +404,8 @@ describe("Order status transitions", () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().status).toBe("ready");
+
+    
 
     res = await getApp().inject({
       method: "PATCH",

@@ -27,7 +27,7 @@ export const stripeRoutes: FastifyPluginAsync = async (app) => {
 
       const paymentIntent = await createPaymentIntent(amount, currency, {
         ...(orderId && { orderId }),
-        ...(req.auth?.token && { userId: req.auth.token }),
+        ...(req.auth?.identity?.userId && { userId: req.auth.identity.userId.toString() }),
       });
 
       return { clientSecret: paymentIntent.client_secret };

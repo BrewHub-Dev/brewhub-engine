@@ -374,7 +374,6 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
           reply.send(updated);
         } catch (error) {
           reply.status(400).send({ error: (error as Error).message });
-          console.error(`Error transitioning to ${endpoint.target}:`, error);
         }
       }
     );

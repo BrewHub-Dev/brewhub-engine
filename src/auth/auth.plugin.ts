@@ -1,4 +1,5 @@
 import { FastifyPluginAsync, FastifyRequest, FastifyReply } from "fastify";
+import fp from "fastify-plugin";
 import { verify } from "jsonwebtoken";
 import { ObjectId } from "mongodb";
 import { Session } from "@/features/sessions/session.model";
@@ -20,6 +21,10 @@ declare module "fastify" {
     authenticate: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
   }
 
+  interface FastifyContextConfig {
+    action?: string;
+  }
+
   interface FastifyRequest {
     auth?: {
       identity: AuthIdentity;
@@ -29,7 +34,7 @@ declare module "fastify" {
   }
 }
 
-export const authPlugin: FastifyPluginAsync = async (app) => {
+const authPluginImpl: FastifyPluginAsync = async (app) => {
   app.decorate(
     "authenticate",
     async (request: FastifyRequest, reply: FastifyReply) => {
@@ -94,4 +99,5 @@ export const authPlugin: FastifyPluginAsync = async (app) => {
   );
 };
 
+export const authPlugin = fp(authPluginImpl);
 export default authPlugin;
