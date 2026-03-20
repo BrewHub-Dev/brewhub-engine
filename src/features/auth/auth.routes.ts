@@ -1,3 +1,4 @@
+import "@fastify/rate-limit";
 import { FastifyPluginAsync } from "fastify";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
@@ -18,7 +19,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
    * POST /auth/register
    * Registro público con código de invitación
    */
-  app.post("/auth/register", async (req, reply) => {
+  app.post("/auth/register", { rateLimit: { max: 5, timeWindow: "1 minute" } }, async (req, reply) => {
     try {
       const body = registerSchema.parse(req.body);
       const { name, emailAddress, password, inviteCode } = body;
@@ -102,7 +103,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     tenantId: z.string().min(1, "El tenantId es requerido"),
   });
 
-  app.post("/auth/register-direct", async (req, reply) => {
+  app.post("/auth/register-direct", { rateLimit: { max: 5, timeWindow: "1 minute" } }, async (req, reply) => {
     try {
       const body = registerDirectSchema.parse(req.body);
       const { name, emailAddress, password, tenantId } = body;

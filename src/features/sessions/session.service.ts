@@ -1,6 +1,7 @@
 import { Types } from "mongoose";
 import { randomBytes } from "node:crypto";
 import { Session } from "./session.model";
+import { type PaginationParams, paginatedResult } from "@/utils/pagination";
 
 export const generateRefreshToken = () => randomBytes(40).toString("hex");
 
@@ -58,4 +59,20 @@ export const findSessionsByUser = async (userId: Types.ObjectId | string) => {
 export const findActiveSessionsByUser = async (userId: Types.ObjectId | string) => {
   const user = new Types.ObjectId(userId);
   return Session.find({ user, expiresAt: { $gt: new Date() } }).exec();
+};
+
+export const findSessionsByUserPaginated = async (
+  userId: Types.ObjectId | string,
+  pagination: PaginationParams
+) => {
+  const user = new Types.ObjectId(userId);
+  const [total, data] = await Promise.all([
+    Session.countDocuments({ user }),
+    Session.find({ user })
+      .sort({ createdAt: -1 })
+      .skip(pagination.skip)
+      .limit(pagination.limit)
+      .exec(),
+  ]);
+  return paginatedResult(data, total, pagination.page, pagination.limit);
 };

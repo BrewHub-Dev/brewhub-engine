@@ -1,27 +1,34 @@
+import "@fastify/rate-limit";
 import { FastifyPluginAsync } from "fastify";
 import { sign, decode } from "jsonwebtoken";
 import * as bcrypt from "bcryptjs";
 import {
   deleteSessionByToken,
-  findSessionsByUser,
+  findSessionsByUserPaginated,
   createSession,
   deleteSessionsByUser,
   findSessionByRefreshToken,
   rotateSession,
   generateRefreshToken,
 } from "./session.service";
+import { parsePagination } from "@/utils/pagination";
 import { findUserByEmail } from "../users/user.service";
 import { getShopById } from "../shops/shop.service";
 import { AuthTokenPayload } from "@/auth/scope";
 
+if (!process.env.JWT_SECRET) {
+  throw new Error("JWT_SECRET no está definido");
+}
+
 const JWT_SECRET = process.env.JWT_SECRET;
+
 interface LoginRequest {
   emailAddress: string;
   password: string;
 }
 
 export const sessionRoutes: FastifyPluginAsync = async (app) => {
-  app.post("/login", { config: { action: "sessions.login" } }, async (req, reply) => {
+  app.post("/login", { config: { action: "sessions.login" }, rateLimit: { max: 10, timeWindow: "1 minute" } }, async (req, reply) => {
     try {
       const { emailAddress, password } = req.body as LoginRequest;
       if (!emailAddress || !password)
@@ -84,8 +91,10 @@ export const sessionRoutes: FastifyPluginAsync = async (app) => {
         return reply.status(401).send({ error: "No auth context" });
       }
 
-      const sessions = await findSessionsByUser(req.auth.identity.userId.toString());
-      reply.send(sessions);
+      const qs = req.query as Record<string, string>;
+      const pagination = parsePagination(qs);
+      const result = await findSessionsByUserPaginated(req.auth.identity.userId.toString(), pagination);
+      reply.send(result);
     } catch (e) {
       reply.status(401).send({ error: (e as Error).message });
     }

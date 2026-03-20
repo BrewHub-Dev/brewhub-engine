@@ -5,6 +5,7 @@ import { Branches } from "../branches/branches.model";
 import { Shop } from "../shops/shop.model";
 import { ObjectId, Filter } from "mongodb";
 import { AuthScope } from "@/auth/scope";
+import { type PaginationParams, paginatedResult } from "@/utils/pagination";
 
 export type UserDocument = User & {
   _id: ObjectId;
@@ -94,6 +95,27 @@ export async function getUser(userId: string | ObjectId, scope: AuthScope) {
   };
 }
 
+async function* getBranchesByIds(branchIds: ObjectId[]) {
+  const branches = db
+    .collection<BranchDocument>("branches")
+    .find({ _id: { $in: branchIds } });
+
+  for await (const branch of branches) {
+    yield branch;
+  }
+}
+
+async function* getShopsByIds(shopIds: ObjectId[]) {
+  const shops = db
+    .collection<ShopDocument>("shops")
+    .find({ _id: { $in: shopIds } })
+
+  for await (const shop of shops) {
+    yield shop;
+  }
+}
+
+
 export async function getUsers(scope: AuthScope) {
   const usersCollection = db.collection<User>("users");
   const baseFilter: Filter<User> = {};
@@ -132,28 +154,16 @@ export async function getUsers(scope: AuthScope) {
     new Set(users.map((u) => u.ShopId).filter(Boolean))
   );
 
-  const [branches, shops] = await Promise.all([
-    branchIds.length
-      ? db
-        .collection<BranchDocument>("branches")
-        .find({ _id: { $in: branchIds } })
-        .toArray()
-      : [],
-    shopIds.length
-      ? db
-        .collection<ShopDocument>("shops")
-        .find({ _id: { $in: shopIds } })
-        .toArray()
-      : [],
-  ]);
 
-  const branchMap = new Map<string, BranchDocument>(
-    branches.map((b): [string, BranchDocument] => [b._id.toString(), b])
-  );
+  const branchMap = new Map<string, BranchDocument>();
+  for await (const branch of getBranchesByIds(branchIds)){
+    branchMap.set(String(branch._id), branch)
+  }
 
-  const shopMap = new Map<string, ShopDocument>(
-    shops.map((s): [string, ShopDocument] => [s._id.toString(), s])
-  );
+  const shopMap = new Map<string, ShopDocument>();
+  for await (const shop of getBranchesByIds(shopIds)){
+    branchMap.set(String(shop._id), shop)
+  }
 
   return users.map((user) => ({
     ...user,
@@ -164,6 +174,33 @@ export async function getUsers(scope: AuthScope) {
       ? shopMap.get(user.ShopId.toString())
       : {},
   }));
+}
+
+export async function getUsersPaginated(scope: AuthScope, pagination: PaginationParams) {
+  const usersCollection = db.collection<User>("users");
+  const baseFilter: Filter<User> = {};
+
+  switch (scope.role) {
+    case "ADMIN": break;
+    case "SHOP_ADMIN":
+      baseFilter.ShopId = scope.shopId;
+      if (scope.branchId) baseFilter.BranchId = scope.branchId;
+      break;
+    case "BRANCH_ADMIN":
+      baseFilter.ShopId = scope.shopId;
+      baseFilter.BranchId = scope.branchId;
+      break;
+    case "CLIENT":
+      baseFilter._id = scope.userId;
+      break;
+  }
+
+  const [total, users] = await Promise.all([
+    usersCollection.countDocuments(baseFilter),
+    usersCollection.find(baseFilter).skip(pagination.skip).limit(pagination.limit).toArray(),
+  ]);
+
+  return paginatedResult(users, total, pagination.page, pagination.limit);
 }
 
 export async function findUserByEmail(email: string) {

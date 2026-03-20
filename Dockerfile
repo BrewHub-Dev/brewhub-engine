@@ -1,4 +1,3 @@
-# ── deps stage: install only production dependencies ──────────────────────────
 FROM oven/bun:1-alpine AS deps
 
 WORKDIR /app

@@ -6,6 +6,8 @@ import { nowUtc, todayInZone } from "@/utils/date-time";
 import { ObjectId } from "mongodb";
 import { emitToUser, emitToBranch, emitToShop } from "@/websockets";
 import { sendPushNotification } from "@/services/push.service";
+import { logger } from "@/utils/logger";
+import { type PaginationParams, paginatedResult } from "@/utils/pagination";
 import {
   type OrderStatus,
   type OrderItem,
@@ -429,6 +431,62 @@ export async function* getOrdersWithDetails(filter: Record<string, any>) {
   }
 }
 
+export async function getOrdersWithDetailsPaginated(
+  filter: Record<string, any>,
+  pagination: PaginationParams
+) {
+  const col = db.collection("orders");
+  const [total, rawOrders] = await Promise.all([
+    col.countDocuments(filter),
+    col.find(filter).sort({ createdAt: -1 }).skip(pagination.skip).limit(pagination.limit).toArray(),
+  ]);
+
+  const customerIdsSet = new Set<string>();
+  const branchIdsSet = new Set<string>();
+  for (const o of rawOrders) {
+    if (o.customerId) customerIdsSet.add(o.customerId.toString());
+    if (o.BranchId) branchIdsSet.add(o.BranchId.toString());
+  }
+
+  const usersById: Record<string, any> = {};
+  for await (const user of getUsersByIds([...customerIdsSet])) {
+    usersById[user._id.toString()] = user;
+  }
+
+  const branchesById: Record<string, string> = {};
+  for await (const branch of getBranchesByIds([...branchIdsSet])) {
+    branchesById[branch._id.toString()] = branch.name;
+  }
+
+  const data = rawOrders.map((order) => ({
+    ...order,
+    customer: usersById[order.customerId?.toString()] ?? null,
+    branchName: branchesById[order.BranchId?.toString()] ?? "Unknown Branch",
+  }));
+
+  return paginatedResult(data, total, pagination.page, pagination.limit);
+}
+
+export async function getOrdersByShopIdPaginated(shopId: ObjectId, pagination: PaginationParams) {
+  const col = db.collection("orders");
+  const filter = { ShopId: shopId };
+  const [total, data] = await Promise.all([
+    col.countDocuments(filter),
+    col.find(filter).sort({ createdAt: -1 }).skip(pagination.skip).limit(pagination.limit).toArray(),
+  ]);
+  return paginatedResult(data, total, pagination.page, pagination.limit);
+}
+
+export async function getActiveOrdersByUserIdPaginated(userId: ObjectId, pagination: PaginationParams) {
+  const col = db.collection("orders");
+  const filter = { customerId: userId, status: { $nin: ["completed", "cancelled"] } };
+  const [total, data] = await Promise.all([
+    col.countDocuments(filter),
+    col.find(filter).sort({ createdAt: -1 }).skip(pagination.skip).limit(pagination.limit).toArray(),
+  ]);
+  return paginatedResult(data, total, pagination.page, pagination.limit);
+}
+
 export async function getOrderByQRToken(token: string) {
   const verified = verifyQRTokenSignature(token);
   if (!verified) return null;
@@ -600,7 +658,7 @@ export async function updateOrderStatus(
       }
     }
   } catch (err) {
-    console.error("[Orders] Failed to dispatch notifications:", err);
+    logger.error({ err }, "[Orders] Failed to dispatch notifications");
   }
 
   return result;

@@ -1,8 +1,9 @@
 import { FastifyPluginAsync } from "fastify";
-import { createUser, getUsers, getUser, updateUser, deleteUser, updateUserPassword, addPushToken } from "./user.service";
+import { createUser, getUsers, getUsersPaginated, getUser, updateUser, deleteUser, updateUserPassword, addPushToken } from "./user.service";
 import { userSchema } from "./user.model";
 import { requirePermission } from "../../middleware/permissions.middleware";
 import { applyScopeMiddleware } from "../../middleware/scope.middleware";
+import { parsePagination } from "@/utils/pagination";
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -40,8 +41,10 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
           return reply.status(401).send({ error: "No auth context" });
         }
 
-        const users = await getUsers(req.auth.scope);
-        reply.status(200).send(users);
+        const qs = req.query as Record<string, string>;
+        const pagination = parsePagination(qs);
+        const result = await getUsersPaginated(req.auth.scope, pagination);
+        reply.status(200).send(result);
       } catch (e) {
         reply.status(500).send({ error: (e as Error).message });
         console.error("Error fetching users:", e);

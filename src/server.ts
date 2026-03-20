@@ -1,109 +1,55 @@
-import Fastify from "fastify";
-import cors from "@fastify/cors";
-import fastifyCookie from "@fastify/cookie";
-import AutoLoad from "@fastify/autoload";
-import * as path from "node:path";
-import mongoose from "mongoose";
 import os from "node:os";
-import { authPlugin } from "@/auth/auth.plugin";
+import { buildApp } from "./app";
+import { connectDB } from "@/db/mongo";
 import { redis } from "@/db/redis";
 import { initWebSockets } from "./websockets";
+import { logger } from "@/utils/logger";
 
 const PORT = Number(process.env.PORT) || 3001;
 
-const app = Fastify({
-  logger: true,
-  connectionTimeout: 30000,
-  keepAliveTimeout: 72000,
-});
+const app = buildApp();
 
 app.addHook("onRoute", (routeOptions: any) => {
   const methods = Array.isArray(routeOptions.method)
     ? routeOptions.method.join(",")
     : routeOptions.method;
-
-  const handlerName =
+  const action =
     routeOptions.config?.action ||
     routeOptions.handler?.name ||
     "anonymous";
-
-  const timestamp = new Date().toISOString();
-
-  console.log(
-    `[${timestamp}] INFO  brewhub/API: ${String(methods).padStart(6)} ${routeOptions.url} => ${handlerName}`
-  );
-});
-
-app.register(cors, {
-  origin: process.env.CORS_ORIGIN || "*",
-  credentials: true,
-  methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
-});
-
-app.register(fastifyCookie);
-
-void authPlugin(app, {});
-
-app.register(AutoLoad, {
-  dir: path.join(__dirname, "features"),
-  dirNameRoutePrefix: false,
+  app.log.debug({ method: methods, url: routeOptions.url, action }, "route registered");
 });
 
 function printAvailableIPs() {
   const interfaces = os.networkInterfaces();
-
-  console.log("\n API disponible en:");
-
+  logger.info("\n API disponible en:");
   for (const name of Object.keys(interfaces)) {
-    const nets = interfaces[name] || [];
-
-    for (const net of nets) {
+    for (const net of interfaces[name] || []) {
       if (net.internal) continue;
-
-      if (net.family === "IPv4") {
-        console.log(`   http://${net.address}:${PORT}`);
-      }
-
-      if (net.family === "IPv6") {
-        console.log(`   http://[${net.address}]:${PORT}`);
-      }
+      if (net.family === "IPv4") logger.info(`   http://${net.address}:${PORT}`);
+      if (net.family === "IPv6") logger.info(`   http://[${net.address}]:${PORT}`);
     }
   }
-
-  console.log("");
 }
 
 const start = async () => {
   try {
-    const mongoUrl = process.env.CONN_URL || process.env.MONGO_URL;
-
-    if (!mongoUrl) {
-      throw new Error("Missing CONN_URL / MONGO_URL environment variable");
-    }
-
-    await mongoose.connect(mongoUrl, {
-      dbName: process.env.DB_NAME,
-    });
-
-    console.log("🍃 Mongoose connected");
+    await connectDB();
+    logger.info("MongoDB connected");
 
     await redis.ping();
-    console.log("[Redis] Ping OK");
+    logger.info("[Redis] Ping OK");
 
-    const address = await app.listen({
-      port: PORT,
-      host: "::",
-    });
-
-    console.log(`Backend corriendo en ${address}`);
+    const address = await app.listen({ port: PORT, host: "::" });
+    logger.info({ address }, "Backend corriendo");
 
     const corsOrigin = process.env.CORS_ORIGIN || "*";
     initWebSockets(app.server, corsOrigin);
-    console.log("WebSockets listos en el servidor");
+    logger.info("WebSockets listos");
 
     printAvailableIPs();
   } catch (err) {
-    console.error(err);
+    logger.error({ err }, "Error al iniciar el servidor");
     process.exit(1);
   }
 };

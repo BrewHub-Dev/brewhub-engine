@@ -33,7 +33,7 @@ export const uploadRoutes: FastifyPluginAsync = async (app) => {
 
         const buffer = await data.toBuffer();
 
-        const shopId = req.auth?.identity.shopId?.toHexString() ?? "shared";
+        const shopId = req.auth?.identity.shopId?.toString() ?? "shared";
         const folder = `${shopId}/items`;
         const publicId = `item-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const result = await uploadImageBuffer(buffer, { folder, publicId });

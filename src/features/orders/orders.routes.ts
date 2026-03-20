@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { ObjectId } from "mongodb";
 import { requirePermission } from "../../middleware/permissions.middleware";
 import { applyScopeMiddleware } from "../../middleware/scope.middleware";
+import { parsePagination } from "@/utils/pagination";
 import {
   createAppOrderSchema,
   createPosOrderSchema,
@@ -10,7 +11,7 @@ import {
   createAppOrder,
   createPosOrder,
   getOrderById,
-  getOrdersWithDetails,
+  getOrdersWithDetailsPaginated,
   getOrderByQRToken,
   getOrderByQRTokenHash,
   updateOrderStatus,
@@ -18,18 +19,12 @@ import {
   refundOrder,
   applyDiscount,
   ensureOrderIndexes,
-  getOrdersByShopId,
-  getActiveOrdersByUserId,
+  getOrdersByShopIdPaginated,
+  getActiveOrdersByUserIdPaginated,
   getOrderCountsForDashboard,
   getDashboardStats,
   getAdminDashboardStats,
 } from "./orders.service";
-
-async function collect<T>(gen: AsyncIterable<T>): Promise<T[]> {
-  const arr: T[] = [];
-  for await (const item of gen) arr.push(item);
-  return arr;
-}
 
 export const ordersRoutes: FastifyPluginAsync = async (app) => {
   ensureOrderIndexes().catch((err) =>
@@ -123,11 +118,11 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
 
         const order = await createAppOrder(parsed, customerId);
 
-        console.log("[Orders] App order created:", order.orderNumber);
+        req.log.info({ orderNumber: order.orderNumber }, "[Orders] App order created");
         reply.status(200).send(order);
       } catch (error) {
         reply.status(400).send({ error: (error as Error).message });
-        console.error("Error creating app order:", error);
+        req.log.error({ err: error }, "Error creating app order");
       }
     }
   );
@@ -163,11 +158,11 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
 
         const order = await createPosOrder(parsed, staffId, staffRole);
 
-        console.log("[Orders] POS order created:", order.orderNumber);
+        req.log.info({ orderNumber: order.orderNumber }, "[Orders] POS order created");
         reply.status(200).send(order);
       } catch (error) {
         reply.status(400).send({ error: (error as Error).message });
-        console.error("Error creating POS order:", error);
+        req.log.error({ err: error }, "Error creating POS order");
       }
     }
   );
@@ -221,8 +216,9 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
         if (qs.status) filter.status = qs.status;
         if (qs.paymentStatus) filter.paymentStatus = qs.paymentStatus;
 
-        const orders = await collect(getOrdersWithDetails(filter));
-        reply.send(orders);
+        const pagination = parsePagination(qs);
+        const result = await getOrdersWithDetailsPaginated(filter, pagination);
+        reply.send(result);
       } catch (error) {
         reply.status(500).send({ error: (error as Error).message });
         console.error("Error listing orders:", error);
@@ -515,8 +511,10 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
         }
 
         const { shopId } = req.params as { shopId: string };
-        const orders = await collect(getOrdersByShopId(new ObjectId(shopId)));
-        reply.send(orders);
+        const qs = req.query as Record<string, string>;
+        const pagination = parsePagination(qs);
+        const result = await getOrdersByShopIdPaginated(new ObjectId(shopId), pagination);
+        reply.send(result);
       } catch (error) {
         reply.status(500).send({ error: (error as Error).message });
         console.error("Error fetching orders by shop:", error);
@@ -541,7 +539,6 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
         }
         
         const { userId } = req.params as { userId: string };
-        const orders = await collect(getActiveOrdersByUserId(new ObjectId(userId)));
 
         if (req.auth.scope.role === 'CLIENT') {
           const authUserId = req.auth.identity.userId.toHexString();
@@ -550,7 +547,10 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
           }
         }
 
-        reply.send(orders);
+        const qs = req.query as Record<string, string>;
+        const pagination = parsePagination(qs);
+        const result = await getActiveOrdersByUserIdPaginated(new ObjectId(userId), pagination);
+        reply.send(result);
       } catch (error) {
         reply.status(500).send({ error: (error as Error).message });
         console.error('Error fetching orders by user:', error);

@@ -1,6 +1,7 @@
 import { db } from "@/db/mongo";
 import { Items, itemsSchema } from "./items.model";
 import { ObjectId } from "mongodb";
+import { type PaginationParams, paginatedResult } from "@/utils/pagination";
 
 export async function createItem(item: Items) {
   const validated = itemsSchema.parse(item);
@@ -46,6 +47,34 @@ export async function getItemsByShopId(ShopId: ObjectId) {
   })) as Array<Record<string, any> & { _id: ObjectId }>;
 
   return itemsWithCategory;
+}
+
+export async function getItemsByShopIdPaginated(ShopId: ObjectId, pagination: PaginationParams) {
+  const items = db.collection("items");
+  const filter = { ShopId: new ObjectId(ShopId) };
+
+  const [total, result] = await Promise.all([
+    items.countDocuments(filter),
+    items.find(filter).skip(pagination.skip).limit(pagination.limit).toArray(),
+  ]);
+
+  const categories = db.collection("categories");
+  const categoryIds = Array.from(
+    new Set(result.map((item) => item.categoryId?.toString()).filter(Boolean))
+  ).map((id) => new ObjectId(id));
+
+  const categoriesMap = new Map<string, any>();
+  if (categoryIds.length > 0) {
+    const cats = await categories.find({ _id: { $in: categoryIds } }).toArray();
+    cats.forEach((cat) => categoriesMap.set(cat._id.toString(), cat));
+  }
+
+  const data = result.map((item) => ({
+    ...item,
+    category: categoriesMap.get(item.categoryId?.toString()) ?? null,
+  }));
+
+  return paginatedResult(data, total, pagination.page, pagination.limit);
 }
 
 export async function getItemById(id: ObjectId) {

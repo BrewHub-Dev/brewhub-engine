@@ -1,9 +1,10 @@
 import type { FastifyPluginAsync } from "fastify";
 import { ObjectId } from "mongodb";
-import { createItem, getItemsByShopId, updateItem, deleteItem, getItemById } from "./items.service";
+import { createItem, getItemsByShopIdPaginated, updateItem, deleteItem, getItemById } from "./items.service";
 import { Items, itemsSchema } from "./items.model";
 import { requirePermission } from "../../middleware/permissions.middleware";
 import { applyScopeMiddleware } from "../../middleware/scope.middleware";
+import { parsePagination } from "@/utils/pagination";
 
 export const itemsRoutes: FastifyPluginAsync = async (app) => {
   app.get(
@@ -20,10 +21,13 @@ export const itemsRoutes: FastifyPluginAsync = async (app) => {
       try {
         const query = req.scopedQuery?.() || {};
 
+        const qs = req.query as Record<string, string>;
+        const pagination = parsePagination(qs);
+
         if (query.ShopId) {
           const shopId = new ObjectId(query.ShopId);
-          const items = await getItemsByShopId(shopId);
-          return reply.send(items);
+          const result = await getItemsByShopIdPaginated(shopId, pagination);
+          return reply.send(result);
         }
 
         if (req.auth?.scope.role === "ADMIN") {
@@ -33,8 +37,8 @@ export const itemsRoutes: FastifyPluginAsync = async (app) => {
               error: "x-shop-id header is required for ADMIN",
             });
           }
-          const items = await getItemsByShopId(new ObjectId(header));
-          return reply.send(items);
+          const result = await getItemsByShopIdPaginated(new ObjectId(header), pagination);
+          return reply.send(result);
         }
 
         reply.send([]);
@@ -59,14 +63,8 @@ export const itemsRoutes: FastifyPluginAsync = async (app) => {
           return reply.status(401).send({ error: "No auth context" });
         }
 
-        const items = await getItemsByShopId(new ObjectId(shopId));
-
-        if (req.auth.scope.role === "CLIENT") {
-          const activeItems = items.filter((item) => item.active);
-          return reply.send(activeItems);
-        }
-
-        if (req.auth.scope.role !== "ADMIN") {
+        const role = req.auth.scope.role;
+        if (role !== "ADMIN" && role !== "CLIENT") {
           const userShopId = req.auth.scope.shopId?.toHexString();
           if (shopId !== userShopId) {
             return reply.status(403).send({
@@ -75,7 +73,18 @@ export const itemsRoutes: FastifyPluginAsync = async (app) => {
           }
         }
 
-        reply.send(items);
+        const qs = req.query as Record<string, string>;
+        const pagination = parsePagination(qs);
+        const result = await getItemsByShopIdPaginated(new ObjectId(shopId), pagination);
+
+        if (req.auth.scope.role === "CLIENT") {
+          return reply.send({
+            ...result,
+            data: result.data.filter((item) => (item as { active?: boolean }).active),
+          });
+        }
+
+        reply.send(result);
       } catch (error) {
         reply.status(500).send({ error: (error as Error).message });
         console.error("Error fetching items by shop:", error);

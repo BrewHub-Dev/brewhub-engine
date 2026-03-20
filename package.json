@@ -4,6 +4,7 @@
     "@fastify/cookie": "^11.0.2",
     "@fastify/cors": "^11.2.0",
     "@fastify/multipart": "^9.4.0",
+    "@fastify/rate-limit": "^10.3.0",
     "@verrou/core": "^0.5.2",
     "bcryptjs": "^3.0.3",
     "cloudinary": "^2.9.0",
@@ -22,12 +23,18 @@
   "scripts": {
     "dev": "bun --watch src/server.ts",
     "build": "tsc",
-    "start": "bun --watch src/server.ts"
+    "start": "bun --watch src/server.ts",
+    "test": "bun test --preload ./tests/preload.ts",
+    "test:watch": "bun test --watch --preload ./tests/preload.ts"
   },
   "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.9",
     "@types/luxon": "^3.7.1",
     "@types/node": "^25.1.0",
     "@types/sharp": "^0.32.0",
+    "bun-types": "^1.3.11",
+    "mongodb-memory-server": "^10.1.4",
+    "pino-pretty": "^13.0.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
   }
