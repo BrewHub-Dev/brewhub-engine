@@ -2,12 +2,11 @@ import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { stripe, createPaymentIntent } from "./stripe.service";
 import { ObjectId } from "mongodb";
-import { markOrderAsPaid } from "../orders/orders.service";
+import { markOrderAsPaid, setStripePaymentIntentId, getOrderById } from "../orders/orders.service";
 
 const createPaymentIntentSchema = z.object({
-  amount: z.number().positive(),
-  currency: z.string().length(3).default("usd"),
-  orderId: z.string().optional(),
+  orderId: z.string(),
+  currency: z.string().length(3).default("mxn"),
 });
 
 export const stripeRoutes: FastifyPluginAsync = async (app) => {
@@ -23,12 +22,26 @@ export const stripeRoutes: FastifyPluginAsync = async (app) => {
         return reply.status(400).send({ error: parsed.error.flatten() });
       }
 
-      const { amount, currency, orderId } = parsed.data;
+      const { orderId, currency } = parsed.data;
 
-      const paymentIntent = await createPaymentIntent(amount, currency, {
-        ...(orderId && { orderId }),
+      const order = await getOrderById(new ObjectId(orderId));
+      if (!order) {
+        return reply.status(404).send({ error: "Order not found" });
+      }
+      if (order.paymentStatus === "paid") {
+        return reply.status(400).send({ error: "Order is already paid" });
+      }
+
+      const paymentIntent = await createPaymentIntent(order.total, currency, {
+        orderId,
         ...(req.auth?.identity?.userId && { userId: req.auth.identity.userId.toString() }),
       });
+
+      try {
+        await setStripePaymentIntentId(new ObjectId(orderId), paymentIntent.id);
+      } catch (err) {
+        console.error("[Stripe] Could not link payment intent to order:", err);
+      }
 
       return { clientSecret: paymentIntent.client_secret };
     }

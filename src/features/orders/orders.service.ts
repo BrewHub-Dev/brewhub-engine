@@ -698,7 +698,18 @@ export async function markOrderAsPaid(
   return result;
 }
 
-export async function refundOrder(orderId: ObjectId) {
+export async function setStripePaymentIntentId(
+  orderId: ObjectId,
+  paymentIntentId: string
+) {
+  const orders = db.collection("orders");
+  await orders.updateOne(
+    { _id: orderId },
+    { $set: { stripePaymentIntentId: paymentIntentId, updatedAt: nowUtc() } }
+  );
+}
+
+export async function refundOrder(orderId: ObjectId, stripeRefundId?: string) {
   const orders = db.collection("orders");
   const order = await orders.findOne({ _id: orderId });
   if (!order) throw new Error("Order not found");
@@ -712,6 +723,7 @@ export async function refundOrder(orderId: ObjectId) {
     {
       $set: {
         paymentStatus: "refunded",
+        ...(stripeRefundId && { stripeRefundId }),
         updatedAt: nowUtc(),
       },
     },

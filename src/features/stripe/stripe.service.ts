@@ -14,3 +14,7 @@ export async function createPaymentIntent(
     automatic_payment_methods: { enabled: true },
   });
 }
+
+export async function refundPaymentIntent(paymentIntentId: string) {
+  return stripe.refunds.create({ payment_intent: paymentIntentId });
+}

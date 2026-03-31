@@ -117,6 +117,8 @@ export const orderSchema = z.object({
   paidAt: z.date().optional(),
   status: orderStatusEnum,
   qrTokenHash: z.string().optional(),
+  stripePaymentIntentId: z.string().optional(),
+  stripeRefundId: z.string().optional(),
   notes: z.string().optional(),
   customerNotes: z.string().optional(),
   guestName: z.string().optional(),

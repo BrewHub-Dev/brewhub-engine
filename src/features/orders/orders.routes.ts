@@ -25,6 +25,7 @@ import {
   getDashboardStats,
   getAdminDashboardStats,
 } from "./orders.service";
+import { refundPaymentIntent } from "../stripe/stripe.service";
 
 export const ordersRoutes: FastifyPluginAsync = async (app) => {
   ensureOrderIndexes().catch((err) =>
@@ -453,7 +454,18 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
     async (req, reply) => {
       try {
         const { id } = req.params as { id: string };
-        const updated = await refundOrder(new ObjectId(id));
+        const order = await getOrderById(new ObjectId(id));
+        if (!order) {
+          return reply.status(404).send({ error: "Order not found" });
+        }
+
+        let stripeRefundId: string | undefined;
+        if ((order as any).stripePaymentIntentId) {
+          const refund = await refundPaymentIntent((order as any).stripePaymentIntentId);
+          stripeRefundId = refund.id;
+        }
+
+        const updated = await refundOrder(new ObjectId(id), stripeRefundId);
 
         console.log(`[Orders] ${updated.orderNumber} → refunded`);
         reply.send(updated);

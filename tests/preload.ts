@@ -1,9 +1,9 @@
+/// <reference types="bun-types" />
 import { mock } from "bun:test";
 
-// ── Environment — must be set BEFORE any src module is imported ────────────
-// auth.plugin.ts captures JWT_SECRET at module-load time; setting it here
-// ensures it matches the value used by makeToken() in test helpers.
+
 process.env.JWT_SECRET = "test-jwt-secret-brewhub";
+process.env.STRIPE_WEBHOOK_SECRET = "whsec_test_secret";
 process.env.NODE_ENV = "test";
 process.env.LOG_LEVEL = "silent";
 
@@ -42,4 +42,35 @@ mock.module("@/websockets", () => ({
 
 mock.module("@/services/push.service", () => ({
   sendPushNotification: async () => {},
+}));
+
+mock.module("@/features/stripe/stripe.service", () => ({
+  stripe: {
+    webhooks: {
+      constructEventAsync: async (body: Buffer) => JSON.parse(body.toString()),
+    },
+    refunds: {
+      create: async ({ payment_intent }: { payment_intent: string }) => ({
+        id: "re_test_mock",
+        payment_intent,
+        status: "succeeded",
+      }),
+    },
+  },
+  createPaymentIntent: async (
+    amount: number,
+    currency: string,
+    metadata: Record<string, string> = {}
+  ) => ({
+    id: "pi_test_mock",
+    client_secret: "pi_test_mock_secret",
+    amount: Math.round(amount * 100),
+    currency,
+    metadata,
+  }),
+  refundPaymentIntent: async (paymentIntentId: string) => ({
+    id: "re_test_mock",
+    payment_intent: paymentIntentId,
+    status: "succeeded",
+  }),
 }));
