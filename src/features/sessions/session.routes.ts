@@ -28,7 +28,12 @@ interface LoginRequest {
 }
 
 export const sessionRoutes: FastifyPluginAsync = async (app) => {
-  app.post("/login", { config: { action: "sessions.login" }, rateLimit: { max: 10, timeWindow: "1 minute" } }, async (req, reply) => {
+  app.post("/login", {
+    config: {
+      action: "sessions.login",
+      rateLimit: { max: 10, timeWindow: "1 minute" }
+    }
+  }, async (req, reply) => {
     try {
       const { emailAddress, password } = req.body as LoginRequest;
       if (!emailAddress || !password)

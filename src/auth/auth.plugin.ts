@@ -3,6 +3,7 @@ import fp from "fastify-plugin";
 import { verify } from "jsonwebtoken";
 import { ObjectId } from "mongodb";
 import { Session } from "@/features/sessions/session.model";
+import { RateLimitOptions } from '@fastify/rate-limit';
 import {
   AuthIdentity,
   AuthScope,
@@ -23,6 +24,7 @@ declare module "fastify" {
 
   interface FastifyContextConfig {
     action?: string;
+    rateLimit?: false | RateLimitOptions;
   }
 
   interface FastifyRequest {

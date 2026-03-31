@@ -536,7 +536,7 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
         if (!req.auth) {
           return reply.status(401).send({ error: 'No auth context' });
         }
-        
+
         const { userId } = req.params as { userId: string };
 
         if (req.auth.scope.role === 'CLIENT') {

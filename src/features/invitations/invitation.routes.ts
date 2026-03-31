@@ -96,6 +96,10 @@ export const invitationRoutes: FastifyPluginAsync = async (app) => {
         return reply.status(400).send({ error: validation.error });
       }
 
+      if (!validation.invitation) {
+        throw new Error("Invitation not found");
+      }
+
       const shop = await getShopById(validation.invitation.tenantId.toString());
 
       if (!shop) {

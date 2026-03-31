@@ -146,14 +146,21 @@ export async function getUsers(scope: AuthScope) {
 
   if (users.length === 0) return [];
 
-  const branchIds = Array.from(
-    new Set(users.map((u) => u.BranchId).filter(Boolean))
+  const branchIds: ObjectId[] = Array.from(
+    new Set(
+      users
+        .map((u) => u.BranchId)
+        .filter((id): id is ObjectId => Boolean(id))
+    )
   );
 
-  const shopIds = Array.from(
-    new Set(users.map((u) => u.ShopId).filter(Boolean))
+  const shopIds: ObjectId[] = Array.from(
+    new Set(
+      users
+        .map((u) => u.ShopId)
+        .filter((id): id is ObjectId => Boolean(id))
+    )
   );
-
 
   const branchMap = new Map<string, BranchDocument>();
   for await (const branch of getBranchesByIds(branchIds)){
@@ -161,8 +168,8 @@ export async function getUsers(scope: AuthScope) {
   }
 
   const shopMap = new Map<string, ShopDocument>();
-  for await (const shop of getBranchesByIds(shopIds)){
-    branchMap.set(String(shop._id), shop)
+  for await (const shop of getShopsByIds(shopIds)){
+    shopMap.set(String(shop._id), shop)
   }
 
   return users.map((user) => ({

@@ -23,6 +23,6 @@ export async function updateCategory(id: ObjectId, update: Partial<Categories>) 
     { $set: validated },
     { returnDocument: "after" }
   );
-  return result.value;
+  return result?.value;
 }
 
