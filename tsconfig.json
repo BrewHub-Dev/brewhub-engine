@@ -7,11 +7,8 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "skipLibCheck": true,
-    "baseUrl": "./src",
     "paths": {
-      "@/*": [
-        "*"
-      ]
+      "@/*": ["./src/*"]
     },
     "ignoreDeprecations": "5.0",
     "rootDir": "./src",
