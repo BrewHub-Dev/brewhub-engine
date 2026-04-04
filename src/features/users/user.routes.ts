@@ -77,6 +77,33 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
     }
   );
 
+  app.patch(
+    "/users/me",
+    {
+      config: { action: "users.updateMe" },
+      preHandler: [app.authenticate],
+    },
+    async (req, reply) => {
+      try {
+        if (!req.auth) return reply.status(401).send({ error: "No auth context" });
+        const userId = req.auth.identity.userId.toString();
+        const body = req.body as Record<string, unknown>;
+
+        const allowed: Record<string, unknown> = { updatedAt: new Date() };
+        if (typeof body.name === "string" && body.name.trim()) allowed.name = body.name.trim();
+        if (typeof body.lastName === "string" && body.lastName.trim()) allowed.lastName = body.lastName.trim();
+        if (typeof body.phone === "string") allowed.phone = body.phone;
+        if (body.address && typeof body.address === "object") allowed.address = body.address;
+
+        const updated = await updateUser(userId, allowed as any);
+        reply.status(200).send(updated);
+      } catch (e) {
+        reply.status(400).send({ error: (e as Error).message });
+        console.error("Error updating own profile:", e);
+      }
+    }
+  );
+
   app.get(
     "/users/:id",
     {

@@ -126,6 +126,57 @@ export const shopRoutes: FastifyPluginAsync = async (app) => {
     }
   );
 
+  app.get(
+    "/shops/me",
+    {
+      config: { action: "shops.me" },
+      preHandler: [app.authenticate],
+    },
+    async (req, reply) => {
+      try {
+        if (!req.auth) return reply.status(401).send({ error: "No auth context" });
+        const scope = req.auth.scope;
+        if (scope.role === "ADMIN" || scope.role === "CLIENT") {
+          return reply.status(400).send({ error: "No shop associated with this role" });
+        }
+        const shopId = scope.shopId;
+        const shop = await getShopById(shopId);
+        if (!shop) return reply.status(404).send({ error: "Shop not found" });
+        reply.send(shop);
+      } catch (error) {
+        reply.status(500).send({ error: (error as Error).message });
+      }
+    }
+  );
+
+  app.patch(
+    "/shops/settings",
+    {
+      config: { action: "shops.settings" },
+      preHandler: [app.authenticate],
+    },
+    async (req, reply) => {
+      try {
+        if (!req.auth) return reply.status(401).send({ error: "No auth context" });
+        const scope = req.auth.scope;
+        if (scope.role === "ADMIN" || scope.role === "CLIENT") {
+          return reply.status(400).send({ error: "Not allowed for this role" });
+        }
+        const shopId = scope.shopId.toHexString();
+
+        const body = req.body as Record<string, unknown>;
+        const allowed: Record<string, unknown> = {};
+        if (typeof body.stockEnabled === "boolean") allowed.stockEnabled = body.stockEnabled;
+        if (typeof body.taxRate === "number") allowed.taxRate = body.taxRate;
+
+        const updated = await updateShop(shopId, allowed);
+        reply.send(updated);
+      } catch (error) {
+        reply.status(400).send({ error: (error as Error).message });
+      }
+    }
+  );
+
   app.patch(
     "/shops/:id",
     {
