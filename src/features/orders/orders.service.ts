@@ -949,3 +949,167 @@ export async function ensureOrderIndexes() {
     { key: { status: 1, BranchId: 1 } },
   ]);
 }
+
+function csvCell(val: unknown): string {
+  const s = String(val ?? "")
+  return s.includes(",") || s.includes('"') || s.includes("\n")
+    ? `"${s.replace(/"/g, '""')}"`
+    : s
+}
+
+function csvRow(cells: unknown[]): string {
+  return cells.map(csvCell).join(",")
+}
+
+export function buildZReportCSV(report: Awaited<ReturnType<typeof getZReport>>, paymentLabels: Record<string, string>, statusLabels: Record<string, string>): string {
+  const fmt = (n: number) => n.toFixed(2)
+  const fmtDate = (iso: string) =>
+    new Date(iso).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" })
+
+  const lines: string[] = []
+
+  const push = (...rows: unknown[][]) => rows.forEach((r) => lines.push(csvRow(r)))
+  const blank = () => lines.push("")
+
+  push(["REPORTE CIERRE DE CAJA - Z-REPORT"])
+  push(["Fecha:", report.date])
+  push(["Generado:", fmtDate(report.generatedAt)])
+  blank()
+
+  push(["RESUMEN"])
+  push(["Órdenes completadas", report.totalOrders])
+  push(["Órdenes canceladas", report.cancelledCount])
+  push(["Órdenes reembolsadas", report.refundedCount])
+  push(["Subtotal", fmt(report.subtotalRevenue)])
+  push(["Impuestos", fmt(report.totalTax)])
+  push(["Descuentos", fmt(report.totalDiscount)])
+  push(["TOTAL INGRESOS", fmt(report.totalRevenue)])
+  push(["Ticket promedio", fmt(report.averageTicket)])
+  blank()
+
+  push(["MÉTODO DE PAGO", "Órdenes", "Total ($)"])
+  for (const [method, stats] of Object.entries(report.byPaymentMethod)) {
+    push([paymentLabels[method] ?? method, stats.count, fmt(stats.total)])
+  }
+  blank()
+
+  push(["ITEMS MÁS VENDIDOS", "Cantidad", "Total ($)"])
+  for (const item of report.topItems) {
+    push([item.name, item.quantity, fmt(item.total)])
+  }
+  blank()
+
+  push(["DETALLE DE ÓRDENES"])
+  push(["#Orden", "Hora", "Estado", "Método de pago", "Canal", "Subtotal", "Impuesto", "Descuento", "Total", "Productos"])
+  for (const o of report.orders) {
+    push([
+      o.orderNumber,
+      fmtDate(o.createdAt),
+      statusLabels[o.status] ?? o.status,
+      paymentLabels[o.paymentMethod] ?? o.paymentMethod,
+      o.source === "pos" ? "POS" : "App",
+      fmt(o.subtotal),
+      fmt(o.tax),
+      fmt(o.discount),
+      fmt(o.total),
+      o.items.map((i) => `${i.quantity}x ${i.name}`).join(" | "),
+    ])
+  }
+
+  return "\uFEFF" + lines.join("\r\n") // BOM para que Excel abra bien con acentos
+}
+
+export async function getZReport(
+  filter: { ShopId?: ObjectId; BranchId?: ObjectId },
+  date: string
+) {
+  const col = db.collection("orders");
+
+  const start = new Date(date);
+  start.setUTCHours(0, 0, 0, 0);
+  const end = new Date(date);
+  end.setUTCHours(23, 59, 59, 999);
+
+  const query: Record<string, unknown> = {
+    ...filter,
+    createdAt: { $gte: start, $lte: end },
+  };
+
+  const orders = await col.find(query).sort({ createdAt: 1 }).toArray();
+
+  const completed = orders.filter((o) => o.status === "completed");
+  const cancelled = orders.filter((o) => o.status === "cancelled");
+  const refunded = orders.filter((o) => o.paymentStatus === "refunded");
+
+  const byPaymentMethod: Record<string, { count: number; total: number }> = {};
+  const itemMap = new Map<string, { name: string; quantity: number; total: number }>();
+
+  let totalRevenue = 0;
+  let subtotalRevenue = 0;
+  let totalTax = 0;
+  let totalDiscount = 0;
+
+  for (const o of completed) {
+    const pm = (o.paymentMethod as string) ?? "unknown";
+    if (!byPaymentMethod[pm]) byPaymentMethod[pm] = { count: 0, total: 0 };
+    byPaymentMethod[pm].count++;
+    byPaymentMethod[pm].total = +(byPaymentMethod[pm].total + ((o.total as number) ?? 0)).toFixed(2);
+
+    totalRevenue += (o.total as number) ?? 0;
+    subtotalRevenue += (o.subtotal as number) ?? 0;
+    totalTax += (o.tax as number) ?? 0;
+    totalDiscount += (o.discount as number) ?? 0;
+
+    for (const item of (o.items as any[]) ?? []) {
+      const existing = itemMap.get(item.name);
+      if (existing) {
+        existing.quantity += item.quantity as number;
+        existing.total = +(existing.total + (item.itemTotal as number)).toFixed(2);
+      } else {
+        itemMap.set(item.name, {
+          name: item.name,
+          quantity: item.quantity as number,
+          total: +(item.itemTotal as number),
+        });
+      }
+    }
+  }
+
+  const topItems = Array.from(itemMap.values()).sort((a, b) => b.quantity - a.quantity);
+
+  const ordersOut = orders.map((o) => ({
+    _id: o._id.toString(),
+    orderNumber: o.orderNumber as number,
+    createdAt: (o.createdAt as Date).toISOString(),
+    status: o.status as string,
+    paymentMethod: (o.paymentMethod as string) ?? "unknown",
+    paymentStatus: (o.paymentStatus as string) ?? "pending",
+    source: (o.source as string) ?? "pos",
+    subtotal: (o.subtotal as number) ?? 0,
+    tax: (o.tax as number) ?? 0,
+    discount: (o.discount as number) ?? 0,
+    total: (o.total as number) ?? 0,
+    items: ((o.items as any[]) ?? []).map((item: any) => ({
+      name: item.name as string,
+      quantity: item.quantity as number,
+      unitPrice: item.unitPrice as number,
+      itemTotal: item.itemTotal as number,
+    })),
+  }));
+
+  return {
+    date,
+    generatedAt: new Date().toISOString(),
+    totalOrders: completed.length,
+    totalRevenue: +totalRevenue.toFixed(2),
+    subtotalRevenue: +subtotalRevenue.toFixed(2),
+    totalTax: +totalTax.toFixed(2),
+    totalDiscount: +totalDiscount.toFixed(2),
+    cancelledCount: cancelled.length,
+    refundedCount: refunded.length,
+    averageTicket: completed.length > 0 ? +(totalRevenue / completed.length).toFixed(2) : 0,
+    byPaymentMethod,
+    topItems,
+    orders: ordersOut,
+  };
+}

@@ -24,6 +24,8 @@ import {
   getOrderCountsForDashboard,
   getDashboardStats,
   getAdminDashboardStats,
+  getZReport,
+  buildZReportCSV,
 } from "./orders.service";
 import { refundPaymentIntent } from "../stripe/stripe.service";
 
@@ -223,6 +225,91 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
       } catch (error) {
         reply.status(500).send({ error: (error as Error).message });
         console.error("Error listing orders:", error);
+      }
+    }
+  );
+
+  const PAYMENT_LABELS: Record<string, string> = {
+    cash: "Efectivo", card: "Tarjeta", transfer: "Transferencia",
+    terminal: "Terminal", bank_transfer: "Transferencia bancaria",
+    wallet: "Wallet", unknown: "Sin método",
+  };
+  const STATUS_LABELS: Record<string, string> = {
+    completed: "Completada", cancelled: "Cancelada", pending: "Pendiente",
+    confirmed: "Confirmada", preparing: "Preparando", ready: "Lista", refunded: "Reembolsada",
+  };
+
+  function buildScopeFilter(req: any): { filter: { ShopId?: ObjectId; BranchId?: ObjectId } | null; error?: string } {
+    const role = req.auth?.scope?.role;
+    const filter: { ShopId?: ObjectId; BranchId?: ObjectId } = {};
+    if (role === "BRANCH_ADMIN") {
+      filter.ShopId = req.auth.scope.shopId;
+      filter.BranchId = req.auth.scope.branchId;
+    } else if (role === "SHOP_ADMIN") {
+      filter.ShopId = req.auth.scope.shopId;
+      const b = req.headers["x-branch-id"] as string | undefined;
+      if (b) filter.BranchId = new ObjectId(b);
+    } else if (role === "ADMIN") {
+      const s = req.headers["x-shop-id"] as string | undefined;
+      if (!s) return { filter: null, error: "x-shop-id header required" };
+      filter.ShopId = new ObjectId(s);
+      const b = req.headers["x-branch-id"] as string | undefined;
+      if (b) filter.BranchId = new ObjectId(b);
+    }
+    return { filter };
+  }
+
+  app.get(
+    "/orders/z-report/csv",
+    {
+      config: { action: "orders.z_report_csv" },
+      preHandler: [app.authenticate, requirePermission("orders:view")],
+    },
+    async (req, reply) => {
+      try {
+        if (!req.auth) return reply.status(401).send({ error: "No auth context" });
+        const qs = req.query as Record<string, string>;
+        const date = qs.date;
+        if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+          return reply.status(400).send({ error: "date query param required (YYYY-MM-DD)" });
+        }
+        const { filter, error } = buildScopeFilter(req);
+        if (!filter) return reply.status(400).send({ error });
+        const report = await getZReport(filter, date);
+        const csv = buildZReportCSV(report, PAYMENT_LABELS, STATUS_LABELS);
+        reply
+          .header("Content-Type", "text/csv; charset=utf-8")
+          .header("Content-Disposition", `attachment; filename="cierre-caja-${date}.csv"`)
+          .send(csv);
+      } catch (error) {
+        reply.status(500).send({ error: (error as Error).message });
+      }
+    }
+  );
+
+  app.get(
+    "/orders/z-report",
+    {
+      config: { action: "orders.z_report" },
+      preHandler: [app.authenticate, requirePermission("orders:view")],
+    },
+    async (req, reply) => {
+      try {
+        if (!req.auth) return reply.status(401).send({ error: "No auth context" });
+
+        const qs = req.query as Record<string, string>;
+        const date = qs.date;
+        if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+          return reply.status(400).send({ error: "date query param required (YYYY-MM-DD)" });
+        }
+
+        const { filter, error } = buildScopeFilter(req);
+        if (!filter) return reply.status(400).send({ error });
+        const report = await getZReport(filter, date);
+        reply.send(report);
+      } catch (error) {
+        reply.status(500).send({ error: (error as Error).message });
+        console.error("Error generating Z-Report:", error);
       }
     }
   );

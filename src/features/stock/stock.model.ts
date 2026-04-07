@@ -14,7 +14,7 @@ export const stockItemSchema = z.object({
   quantity: z.number().min(0).default(0),
   minQuantity: z.number().min(0).default(0),
   maxQuantity: z.number().min(0).optional(),
-  shopId: z.string().min(1),
+  branchId: z.string(),
   description: z.string().optional(),
   supplier: z.string().optional(),
   cost: z.number().min(0).optional(),
