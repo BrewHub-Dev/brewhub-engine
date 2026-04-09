@@ -26,6 +26,7 @@ import {
   getAdminDashboardStats,
   getZReport,
   buildZReportCSV,
+  reorderItems,
 } from "./orders.service";
 import { refundPaymentIntent } from "../stripe/stripe.service";
 
@@ -363,6 +364,45 @@ export const ordersRoutes: FastifyPluginAsync = async (app) => {
       } catch (error) {
         reply.status(500).send({ error: (error as Error).message });
         console.error("Error fetching order:", error);
+      }
+    }
+  );
+
+  app.post(
+    "/orders/:id/reorder",
+    {
+      config: { action: "orders.reorder" },
+      preHandler: [app.authenticate, requirePermission("orders:create")],
+    },
+    async (req, reply) => {
+      try {
+        if (!req.auth) {
+          return reply.status(401).send({ error: "No auth context" });
+        }
+
+        const { id } = req.params as { id: string };
+        const orderId = new ObjectId(id);
+
+        const order = await getOrderById(orderId);
+        if (!order) {
+          return reply.status(404).send({ error: "Orden no encontrada" });
+        }
+
+        const role = req.auth.scope.role;
+        if (role === "CLIENT") {
+          if (
+            order.customerId?.toString() !==
+            req.auth.identity.userId.toHexString()
+          ) {
+            return reply.status(403).send({ error: "No tienes acceso a esta orden" });
+          }
+        }
+
+        const cartData = await reorderItems(orderId);
+        reply.send(cartData);
+      } catch (error) {
+        reply.status(500).send({ error: (error as Error).message });
+        console.error("Error reordering:", error);
       }
     }
   );

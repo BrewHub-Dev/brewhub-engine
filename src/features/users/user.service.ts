@@ -163,12 +163,12 @@ export async function getUsers(scope: AuthScope) {
   );
 
   const branchMap = new Map<string, BranchDocument>();
-  for await (const branch of getBranchesByIds(branchIds)){
+  for await (const branch of getBranchesByIds(branchIds)) {
     branchMap.set(String(branch._id), branch)
   }
 
   const shopMap = new Map<string, ShopDocument>();
-  for await (const shop of getShopsByIds(shopIds)){
+  for await (const shop of getShopsByIds(shopIds)) {
     shopMap.set(String(shop._id), shop)
   }
 
@@ -249,7 +249,23 @@ export async function updateUserPassword(userId: string, newPassword: string) {
 
   const result = await users.findOneAndUpdate(
     { _id: new ObjectId(userId) },
-    { $set: { password: hashedPassword } },
+    { $set: { password: hashedPassword, updatedAt: new Date() } },
+    { returnDocument: "after" }
+  );
+
+  if (!result) {
+    throw new Error("User not found");
+  }
+
+  return result;
+}
+
+export async function updateUserNotifications(userId: string, enabled: boolean) {
+  const users = db.collection<User>("users");
+
+  const result = await users.findOneAndUpdate(
+    { _id: new ObjectId(userId) },
+    { $set: { notifications: enabled, updatedAt: new Date() } },
     { returnDocument: "after" }
   );
 

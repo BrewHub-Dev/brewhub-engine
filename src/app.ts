@@ -22,7 +22,6 @@ export function buildApp() {
 
   app.register(fastifyCookie);
 
-  // Global rate limit: 200 req/min per IP
   app.register(rateLimit, {
     global: true,
     max: 200,

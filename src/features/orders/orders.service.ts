@@ -2,7 +2,7 @@ import * as crypto from "node:crypto";
 import { db } from "@/db/mongo";
 import { redis, redisKeys } from "@/db/redis";
 import { withLock, lockKeys } from "@/db/lock";
-import { nowUtc, todayInZone } from "@/utils/date-time";
+import { nowUtc, nowInZone, DateTime } from "@/utils/date-time";
 import { ObjectId } from "mongodb";
 import { emitToUser, emitToBranch, emitToShop } from "@/websockets";
 import { sendPushNotification } from "@/services/push.service";
@@ -85,8 +85,8 @@ export async function generateOrderNumber(
   branchId: ObjectId,
   timezone: string
 ): Promise<string> {
-  const dateStr = todayInZone(timezone).replaceAll(/-/g, "");
-  const branchShort = branchId.toHexString().slice(-4).toUpperCase();
+  const dt = DateTime.now().setZone(timezone);
+  const dateStr = dt.toFormat('yyMMdd');
   const counterId = `orders:${branchId.toHexString()}:${dateStr}`;
 
   const result = await db.collection("counters").findOneAndUpdate(
@@ -96,7 +96,7 @@ export async function generateOrderNumber(
   );
 
   const seq = (result!.seq as number).toString().padStart(4, "0");
-  return `ORD-${dateStr}-${branchShort}-${seq}`;
+  return `${dateStr}-${seq}`;
 }
 
 
@@ -177,7 +177,8 @@ export async function snapshotOrderItems(
 export async function calculateTotals(
   items: OrderItem[],
   shopId: ObjectId,
-  discountAmount = 0
+  discountAmount = 0,
+  tipAmount = 0
 ) {
   const shops = db.collection("shops");
   const shop = await shops.findOne({ _id: shopId });
@@ -205,7 +206,7 @@ export async function calculateTotals(
     }
   }
 
-  const total = subtotal + (taxes.includedInPrice ? 0 : tax) - discountAmount;
+  const total = subtotal + (taxes.includedInPrice ? 0 : tax) - discountAmount + tipAmount;
   const { roundingMode, roundToDecimals } = pricing;
 
   return {
@@ -224,19 +225,22 @@ export async function createAppOrder(
   return withLock(lockKeys.orderCreate(customerId, input.BranchId), async () => {
     const orders = db.collection("orders");
     const branches = db.collection("branches");
+    const shops = db.collection("shops");
 
     const branchId = new ObjectId(input.BranchId);
     const branch = await branches.findOne({ _id: branchId });
     if (!branch) throw new Error("Branch not found");
 
     const shopId = new ObjectId(branch.ShopId);
-    const timezone: string = branch.timezone || "UTC";
+    const shop = await shops.findOne({ _id: shopId });
+
+    const timezone = branch.timezone || shop?.localization?.timezone || "UTC";
 
     const items = await snapshotOrderItems(input.items, shopId);
-    const totals = await calculateTotals(items, shopId);
+    const totals = await calculateTotals(items, shopId, 0, input.tip || 0);
     const orderNumber = await generateOrderNumber(branchId, timezone);
 
-    const now = nowUtc();
+    const now = nowInZone(timezone);
     const customerOid = new ObjectId(customerId);
 
     const orderDoc = {
@@ -254,6 +258,8 @@ export async function createAppOrder(
       status: "pending" as const,
       notes: undefined,
       customerNotes: input.customerNotes,
+      tip: input.tip,
+      scheduledAt: input.scheduledAt,
       timezone,
       statusHistory: [
         {
@@ -300,19 +306,22 @@ export async function createPosOrder(
   return withLock(lockKeys.orderCreate(staffId, input.BranchId), async () => {
     const orders = db.collection("orders");
     const branches = db.collection("branches");
+    const shops = db.collection("shops");
 
     const branchId = new ObjectId(input.BranchId);
     const branch = await branches.findOne({ _id: branchId });
     if (!branch) throw new Error("Branch not found");
 
     const shopId = new ObjectId(branch.ShopId);
-    const timezone: string = branch.timezone || "UTC";
+    const shop = await shops.findOne({ _id: shopId });
+
+    const timezone = branch.timezone || shop?.localization?.timezone || "UTC";
 
     const items = await snapshotOrderItems(input.items, shopId);
-    const totals = await calculateTotals(items, shopId, input.discount || 0);
+    const totals = await calculateTotals(items, shopId, input.discount || 0, input.tip || 0);
     const orderNumber = await generateOrderNumber(branchId, timezone);
 
-    const now = nowUtc();
+    const now = nowInZone(timezone);
     const staffOid = new ObjectId(staffId);
 
     const orderDoc = {
@@ -334,6 +343,8 @@ export async function createPosOrder(
       notes: input.notes,
       customerNotes: undefined,
       guestName: input.guestName,
+      tip: input.tip,
+      scheduledAt: input.scheduledAt,
       timezone,
       statusHistory: [
         {
@@ -366,6 +377,34 @@ export async function createPosOrder(
 
 export async function getOrderById(id: ObjectId) {
   return db.collection("orders").findOne({ _id: id });
+}
+
+export async function reorderItems(orderId: ObjectId) {
+  const order = await getOrderById(orderId);
+  if (!order) throw new Error("Order not found");
+
+  const items = db.collection("items");
+
+  const cartItems = await Promise.all(
+    order.items.map(async (item: any) => {
+      const fullItem = await items.findOne({ _id: new ObjectId(item.itemId) });
+
+      return {
+        itemId: item.itemId.toString(),
+        quantity: item.quantity,
+        ...(item.modifiers && item.modifiers.length > 0
+          ? { modifiers: item.modifiers.map((m: any) => ({ name: m.name, optionName: m.optionName })) }
+          : {}),
+        ...(item.notes ? { notes: item.notes } : {}),
+        ...(fullItem ? { itemData: fullItem } : {}),
+      };
+    })
+  );
+
+  return {
+    BranchId: order.BranchId.toString(),
+    items: cartItems,
+  };
 }
 
 
@@ -551,13 +590,46 @@ export async function* getActiveOrdersByUserId(userId: ObjectId) {
 
 export async function getOrderCountsForDashboard(userId: ObjectId) {
   const orders = db.collection("orders");
-  const total = await orders.countDocuments({ customerId: userId });
-  const completed = await orders.countDocuments({ customerId: userId, status: "completed" });
-  const inProduction = await orders.countDocuments({
+  const usersCol = db.collection("users");
+  const branchesCol = db.collection("branches");
+  const shopsCol = db.collection("shops");
+
+  const user = await usersCol.findOne({ _id: userId });
+  let timezone = "UTC";
+
+  if (user?.BranchId) {
+    const branch = await branchesCol.findOne({ _id: user.BranchId });
+    if (branch?.timezone) {
+      timezone = branch.timezone;
+    } else if (branch?.ShopId) {
+      const shop = await shopsCol.findOne({ _id: new ObjectId(branch.ShopId) });
+      timezone = shop?.localization?.timezone || "UTC";
+    }
+  } else if (user?.ShopId) {
+    const shop = await shopsCol.findOne({ _id: user.ShopId });
+    timezone = shop?.localization?.timezone || "UTC";
+  }
+
+  const dt = DateTime.now().setZone(timezone);
+  const startOfToday = dt.startOf("day").toJSDate();
+  const endOfToday = dt.endOf("day").toJSDate();
+
+  const filterToday = {
     customerId: userId,
+    createdAt: { $gte: startOfToday, $lte: endOfToday },
+  };
+
+  const total = await orders.countDocuments(filterToday);
+  const completed = await orders.countDocuments({
+    ...filterToday,
+    status: "completed",
+  });
+  const inProduction = await orders.countDocuments({
+    ...filterToday,
     status: { $in: ["confirmed", "preparing", "ready"] }
   });
-  return { total, inProduction, completed };
+
+  return { total, inProduction, completed, timezone };
 }
 
 
@@ -637,6 +709,13 @@ export async function updateOrderStatus(
         orderId: result._id,
         orderNumber: result.orderNumber,
         status: result.status,
+      });
+
+      emitToUser(customerStr, "dashboard:countsUpdated", {
+        orderId: result._id,
+        orderNumber: result.orderNumber,
+        status: result.status,
+        timestamp: new Date().toISOString(),
       });
 
       if (["preparing", "ready", "completed"].includes(result.status)) {
@@ -1024,11 +1103,26 @@ export async function getZReport(
   date: string
 ) {
   const col = db.collection("orders");
+  const branchesCol = db.collection("branches");
+  const shopsCol = db.collection("shops");
 
-  const start = new Date(date);
-  start.setUTCHours(0, 0, 0, 0);
-  const end = new Date(date);
-  end.setUTCHours(23, 59, 59, 999);
+  let timezone = "UTC";
+  if (filter.BranchId) {
+    const branch = await branchesCol.findOne({ _id: filter.BranchId });
+    if (branch?.timezone) {
+      timezone = branch.timezone;
+    } else if (branch?.ShopId) {
+      const shop = await shopsCol.findOne({ _id: new ObjectId(branch.ShopId) });
+      timezone = shop?.localization?.timezone || "UTC";
+    }
+  } else if (filter.ShopId) {
+    const shop = await shopsCol.findOne({ _id: filter.ShopId });
+    timezone = shop?.localization?.timezone || "UTC";
+  }
+
+  const dt = DateTime.fromISO(date, { zone: timezone });
+  const start = dt.startOf("day").toJSDate();
+  const end = dt.endOf("day").toJSDate();
 
   const query: Record<string, unknown> = {
     ...filter,
@@ -1077,29 +1171,34 @@ export async function getZReport(
 
   const topItems = Array.from(itemMap.values()).sort((a, b) => b.quantity - a.quantity);
 
-  const ordersOut = orders.map((o) => ({
-    _id: o._id.toString(),
-    orderNumber: o.orderNumber as number,
-    createdAt: (o.createdAt as Date).toISOString(),
-    status: o.status as string,
-    paymentMethod: (o.paymentMethod as string) ?? "unknown",
-    paymentStatus: (o.paymentStatus as string) ?? "pending",
-    source: (o.source as string) ?? "pos",
-    subtotal: (o.subtotal as number) ?? 0,
-    tax: (o.tax as number) ?? 0,
-    discount: (o.discount as number) ?? 0,
-    total: (o.total as number) ?? 0,
-    items: ((o.items as any[]) ?? []).map((item: any) => ({
-      name: item.name as string,
-      quantity: item.quantity as number,
-      unitPrice: item.unitPrice as number,
-      itemTotal: item.itemTotal as number,
-    })),
-  }));
+  const ordersOut = orders.map((o) => {
+    const orderDt = DateTime.fromJSDate(o.createdAt as Date, { zone: "utc" }).setZone(timezone);
+    return {
+      _id: o._id.toString(),
+      orderNumber: o.orderNumber as number,
+      createdAt: orderDt.toFormat("yyyy-MM-dd HH:mm:ss"),
+      createdAtRaw: (o.createdAt as Date).toISOString(),
+      status: o.status as string,
+      paymentMethod: (o.paymentMethod as string) ?? "unknown",
+      paymentStatus: (o.paymentStatus as string) ?? "pending",
+      source: (o.source as string) ?? "pos",
+      subtotal: (o.subtotal as number) ?? 0,
+      tax: (o.tax as number) ?? 0,
+      discount: (o.discount as number) ?? 0,
+      total: (o.total as number) ?? 0,
+      items: ((o.items as any[]) ?? []).map((item: any) => ({
+        name: item.name as string,
+        quantity: item.quantity as number,
+        unitPrice: item.unitPrice as number,
+        itemTotal: item.itemTotal as number,
+      })),
+    };
+  });
 
   return {
     date,
-    generatedAt: new Date().toISOString(),
+    timezone,
+    generatedAt: DateTime.now().setZone(timezone).toFormat("yyyy-MM-dd HH:mm:ss"),
     totalOrders: completed.length,
     totalRevenue: +totalRevenue.toFixed(2),
     subtotalRevenue: +subtotalRevenue.toFixed(2),

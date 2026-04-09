@@ -79,7 +79,13 @@ export const shopRoutes: FastifyPluginAsync = async (app) => {
         if (!shop) {
           return reply.status(404).send({ error: "Shop not found" });
         }
-        reply.send({ name: shop.name, image: shop.image ?? null });
+        reply.send({ 
+          name: shop.name, 
+          image: shop.image ?? null,
+          timezone: shop.localization?.timezone ?? 'UTC',
+          currency: shop.currency?.baseCurrency ?? { code: 'USD', symbol: '$' },
+          language: shop.localization?.language ?? 'en',
+        });
       } catch (error) {
         reply.status(500).send({ error: (error as Error).message });
       }

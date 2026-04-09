@@ -48,6 +48,9 @@ export const userSchema = z
       })
     ).optional(),
 
+    notifications: z.boolean().default(true),
+    avatarUrl: z.string().url().optional(),
+
     active: z.boolean().default(true),
 
     createdAt: z.date().optional(),

@@ -1,9 +1,12 @@
 import { FastifyPluginAsync } from "fastify";
-import { createUser, getUsers, getUsersPaginated, getUser, updateUser, deleteUser, updateUserPassword, addPushToken } from "./user.service";
+import { createUser, getUsersPaginated, getUser, updateUser, deleteUser, updateUserPassword, addPushToken, updateUserNotifications } from "./user.service";
 import { userSchema } from "./user.model";
 import { requirePermission } from "../../middleware/permissions.middleware";
 import { applyScopeMiddleware } from "../../middleware/scope.middleware";
 import { parsePagination } from "@/utils/pagination";
+import { db } from "@/db/mongo";
+import { ObjectId } from "mongodb";
+import * as bcrypt from "bcryptjs";
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -182,12 +185,30 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
           return reply.status(401).send({ error: "No auth context" });
         }
 
-        const { newPassword } = req.body as { newPassword: string };
+        const { currentPassword, newPassword } = req.body as { currentPassword: string; newPassword: string };
+        
+        if (!currentPassword) {
+          return reply.status(400).send({ error: "Current password is required" });
+        }
+        
         if (!newPassword || newPassword.length < 6) {
-          return reply.status(400).send({ error: "Password must be at least 6 characters" });
+          return reply.status(400).send({ error: "New password must be at least 6 characters" });
         }
 
         const userId = req.auth.identity.userId.toString();
+        
+        const users = db.collection("users");
+        const user = await users.findOne({ _id: new ObjectId(userId) });
+        
+        if (!user || !user.password) {
+          return reply.status(404).send({ error: "User not found" });
+        }
+
+        const isValidPassword = await bcrypt.compare(currentPassword, user.password);
+        if (!isValidPassword) {
+          return reply.status(400).send({ error: "Current password is incorrect" });
+        }
+
         await updateUserPassword(userId, newPassword);
 
         console.log("[Users] Password updated for user:", userId);
@@ -195,6 +216,36 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
       } catch (e) {
         reply.status(400).send({ error: (e as Error).message });
         console.error("Error updating password:", e);
+      }
+    }
+  );
+
+  app.patch(
+    "/users/me/notifications",
+    {
+      config: { action: "users.updateNotifications" },
+      preHandler: [app.authenticate],
+    },
+    async (req, reply) => {
+      try {
+        if (!req.auth) {
+          return reply.status(401).send({ error: "No auth context" });
+        }
+
+        const { enabled } = req.body as { enabled: boolean };
+        
+        if (typeof enabled !== "boolean") {
+          return reply.status(400).send({ error: "enabled must be a boolean" });
+        }
+
+        const userId = req.auth.identity.userId.toString();
+        await updateUserNotifications(userId, enabled);
+
+        console.log("[Users] Notifications updated for user:", userId);
+        reply.status(200).send({ ok: true, enabled });
+      } catch (e) {
+        reply.status(400).send({ error: (e as Error).message });
+        console.error("Error updating notifications:", e);
       }
     }
   );

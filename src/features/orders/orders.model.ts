@@ -77,6 +77,8 @@ export const createAppOrderSchema = z.object({
   paymentMethod: paymentMethodEnum,
   paymentStatus: paymentStatusEnum.optional(),
   customerNotes: z.string().optional(),
+  tip: z.number().min(0).optional(),
+  scheduledAt: z.string().datetime().optional(),
 });
 export type CreateAppOrderInput = z.infer<typeof createAppOrderSchema>;
 
@@ -90,6 +92,8 @@ export const createPosOrderSchema = z
     guestName: z.string().min(1).optional(),
     notes: z.string().optional(),
     discount: z.number().min(0).optional(),
+    tip: z.number().min(0).optional(),
+    scheduledAt: z.string().datetime().optional(),
   })
   .refine((data) => !!data.customerId || !!data.guestName, {
     message: "Se requiere customerId o guestName para identificar al cliente",
@@ -112,6 +116,7 @@ export const orderSchema = z.object({
   tax: z.number().min(0),
   discount: z.number().min(0).default(0),
   total: z.number().min(0),
+  tip: z.number().min(0).optional(),
   paymentMethod: paymentMethodEnum,
   paymentStatus: paymentStatusEnum,
   paidAt: z.date().optional(),
@@ -122,6 +127,7 @@ export const orderSchema = z.object({
   notes: z.string().optional(),
   customerNotes: z.string().optional(),
   guestName: z.string().optional(),
+  scheduledAt: z.date().optional(),
   statusHistory: z.array(statusHistoryEntrySchema),
   timezone: z.string().default("UTC"),
   createdAt: z.date(),
