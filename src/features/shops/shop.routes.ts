@@ -253,4 +253,68 @@ export const shopRoutes: FastifyPluginAsync = async (app) => {
       }
     }
   );
+
+  app.post(
+    "/shops/:id/notifications",
+    {
+      config: { action: "shops.notifications" },
+      preHandler: [app.authenticate, requirePermission("shops:edit")],
+    },
+    async (req, reply) => {
+      try {
+        const { id } = req.params as { id: string };
+        const { email, stockAlertsEnabled } = req.body as {
+          email?: string;
+          stockAlertsEnabled?: boolean;
+        };
+
+        const existingShop = await getShopById(id);
+        if (!existingShop) {
+          return reply.status(404).send({ error: "Shop not found" });
+        }
+
+        const notifications = {
+          ...existingShop.notifications,
+          email: email ?? existingShop.notifications?.email,
+          stockAlertsEnabled:
+            stockAlertsEnabled ?? existingShop.notifications?.stockAlertsEnabled ?? false,
+        };
+
+        const updated = await updateShop(id, { notifications });
+
+        console.log("[Shops] Notifications updated:", id);
+        reply.send(updated);
+      } catch (error) {
+        reply.status(400).send({ error: (error as Error).message });
+        console.error("Error updating notifications:", error);
+      }
+    }
+  );
+
+  app.post(
+    "/shops/:id/check-stock-alerts",
+    {
+      config: { action: "shops.check_stock_alerts" },
+      preHandler: [app.authenticate, requirePermission("shops:edit")],
+    },
+    async (req, reply) => {
+      try {
+        const { id } = req.params as { id: string };
+
+        const { checkAllBranchesAndSendAlerts } = await import(
+          "@/features/stock/stock.service"
+        );
+        const results = await checkAllBranchesAndSendAlerts(id);
+
+        console.log("[Shops] Stock alerts checked for shop:", id);
+        reply.send({
+          checkedAt: new Date().toISOString(),
+          results,
+        });
+      } catch (error) {
+        reply.status(500).send({ error: (error as Error).message });
+        console.error("Error checking stock alerts:", error);
+      }
+    }
+  );
 };

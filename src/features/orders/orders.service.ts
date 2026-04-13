@@ -15,6 +15,7 @@ import {
   type CreatePosOrderInput,
   STATE_TRANSITIONS,
 } from "./orders.model";
+import { consumeInventoryForOrder } from "@/features/recipes/recipes.service";
 
 const QR_SECRET = process.env.QR_SECRET || process.env.JWT_SECRET || "";
 const QR_TTL_HOURS = 72;
@@ -82,12 +83,13 @@ export function verifyQRTokenSignature(token: string): {
 }
 
 export async function generateOrderNumber(
-  branchId: ObjectId,
+  shopId: ObjectId,
+  shopName: string,
   timezone: string
 ): Promise<string> {
   const dt = DateTime.now().setZone(timezone);
   const dateStr = dt.toFormat('yyMMdd');
-  const counterId = `orders:${branchId.toHexString()}:${dateStr}`;
+  const counterId = `orders:${shopId.toHexString()}:${dateStr}`;
 
   const result = await db.collection("counters").findOneAndUpdate(
     { _id: counterId as any },
@@ -95,8 +97,22 @@ export async function generateOrderNumber(
     { upsert: true, returnDocument: "after" }
   );
 
-  const seq = (result!.seq as number).toString().padStart(4, "0");
-  return `${dateStr}-${seq}`;
+  const seq = (result!.seq as number).toString().padStart(2, "0");
+
+  const prefix = shopName
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .substring(0, 3)
+    .toUpperCase()
+    .padEnd(3, "X");
+
+  const ms = (Date.now() % 1000).toString().padStart(3, "0");
+
+  const alpha = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const rand =
+    alpha[Math.floor(Math.random() * 26)] +
+    alpha[Math.floor(Math.random() * 26)];
+
+  return `${prefix}-${ms}-${seq}-${rand}`;
 }
 
 
@@ -238,7 +254,7 @@ export async function createAppOrder(
 
     const items = await snapshotOrderItems(input.items, shopId);
     const totals = await calculateTotals(items, shopId, 0, input.tip || 0);
-    const orderNumber = await generateOrderNumber(branchId, timezone);
+    const orderNumber = await generateOrderNumber(shopId, shop?.name ?? "", timezone);
 
     const now = nowInZone(timezone);
     const customerOid = new ObjectId(customerId);
@@ -319,7 +335,7 @@ export async function createPosOrder(
 
     const items = await snapshotOrderItems(input.items, shopId);
     const totals = await calculateTotals(items, shopId, input.discount || 0, input.tip || 0);
-    const orderNumber = await generateOrderNumber(branchId, timezone);
+    const orderNumber = await generateOrderNumber(shopId, shop?.name ?? "", timezone);
 
     const now = nowInZone(timezone);
     const staffOid = new ObjectId(staffId);
@@ -686,6 +702,14 @@ export async function updateOrderStatus(
 
   if (!result) throw new Error("Order status changed concurrently, please retry");
 
+  if (newStatus === "confirmed" && order.BranchId) {
+    const items = order.items.map((item: any) => ({
+      itemId: item.itemId.toString(),
+      quantity: item.quantity,
+    }));
+    await consumeInventoryForOrder(items, order.BranchId.toString());
+  }
+
   try {
     const orderPayload = {
       orderId: result._id,
@@ -1023,7 +1047,7 @@ export async function ensureOrderIndexes() {
     { key: { BranchId: 1, createdAt: -1 } },
     { key: { ShopId: 1, createdAt: -1 } },
     { key: { customerId: 1, createdAt: -1 } },
-    { key: { orderNumber: 1 }, unique: true },
+    { key: { ShopId: 1, orderNumber: 1 }, unique: true },
     { key: { qrTokenHash: 1 }, sparse: true },
     { key: { status: 1, BranchId: 1 } },
   ]);

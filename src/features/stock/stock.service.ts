@@ -86,3 +86,72 @@ export async function getLowStockItems(branchId: string) {
     })
     .toArray();
 }
+
+export async function checkAndSendStockAlerts(branchId: string, shopId: string): Promise<{ sent: boolean; count: number }> {
+  const col = db.collection('stock_ingredients');
+  const branches = db.collection('branches');
+  const shops = db.collection('shops');
+
+  const branch = await branches.findOne({ _id: new ObjectId(branchId) });
+  const shop = await shops.findOne({ _id: new ObjectId(shopId) });
+
+  if (!shop) return { sent: false, count: 0 };
+
+  const shopAlertEmail = shop.notifications?.email || shop.alertEmail;
+  if (!shopAlertEmail) return { sent: false, count: 0 };
+
+  const lowStock = await col
+    .find({
+      branchId: new ObjectId(branchId),
+      active: true,
+      $and: [
+        { quantity: { $gt: 0 } },
+        {
+          $expr: {
+            $lte: [
+              { $divide: ["$quantity", "$minQuantity"] },
+              0.15
+            ]
+          }
+        }
+      ]
+    })
+    .toArray();
+
+  if (lowStock.length === 0) return { sent: false, count: 0 };
+
+  const { sendStockAlertEmail } = await import("@/services/email.service");
+  
+  const items = lowStock.map((item) => ({
+    name: item.name,
+    quantity: item.quantity,
+    minQuantity: item.minQuantity,
+    unit: item.unit,
+  }));
+
+  const sent = await sendStockAlertEmail(
+    shopAlertEmail,
+    shop.name || "Mi Tienda",
+    items
+  );
+
+  return { sent, count: lowStock.length };
+}
+
+export async function checkAllBranchesAndSendAlerts(shopId: string): Promise<{ branchId: string; count: number; sent: boolean }[]> {
+  const branches = db.collection('branches');
+  const branchList = await branches.find({ ShopId: new ObjectId(shopId) }).toArray();
+
+  const results: { branchId: string; count: number; sent: boolean }[] = [];
+
+  for (const branch of branchList) {
+    const result = await checkAndSendStockAlerts(branch._id.toString(), shopId);
+    results.push({
+      branchId: branch._id.toString(),
+      count: result.count,
+      sent: result.sent,
+    });
+  }
+
+  return results;
+}

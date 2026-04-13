@@ -49,7 +49,10 @@ export type Permission =
   | "categories:view"
   | "categories:create"
   | "categories:edit"
-  | "categories:delete";
+  | "categories:delete"
+
+  | "promocodes:manage"
+  | "recipes:manage";
 
 export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   ADMIN: [
@@ -85,7 +88,6 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "shops:edit",
     "shops:delete",
 
-
     "analytics:view",
     "analytics:export",
     "analytics:view_all_shops",
@@ -103,6 +105,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "categories:create",
     "categories:edit",
     "categories:delete",
+
+    "promocodes:manage",
+    "recipes:manage",
   ],
 
   SHOP_ADMIN: [
@@ -148,6 +153,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "categories:create",
     "categories:edit",
     "categories:delete",
+
+    "promocodes:manage",
+    "recipes:manage",
   ],
 
   BRANCH_ADMIN: [

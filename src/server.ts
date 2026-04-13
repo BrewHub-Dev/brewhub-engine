@@ -4,6 +4,7 @@ import { connectDB } from "@/db/mongo";
 import { redis } from "@/db/redis";
 import { initWebSockets } from "./websockets";
 import { logger } from "@/utils/logger";
+import { startStockAlertScheduler } from "./services/stock-alert-scheduler";
 
 const PORT = Number(process.env.PORT) || 3001;
 
@@ -46,6 +47,7 @@ const start = async () => {
     const corsOrigin = process.env.CORS_ORIGIN || "*";
     initWebSockets(app.server, corsOrigin);
     logger.info("WebSockets listos");
+    startStockAlertScheduler();
 
     printAvailableIPs();
   } catch (err) {

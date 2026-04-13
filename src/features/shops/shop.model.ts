@@ -83,8 +83,13 @@ export const shopSchema = z.object({
     supportedCountries: z.array(z.string().length(2)),
   }),
 
-    createdAt: z.date().optional(),
-      updatedAt: z.date().optional(),
+  notifications: z.object({
+    email: z.string().email().optional(),
+    stockAlertsEnabled: z.boolean().default(false),
+  }).optional(),
+
+  createdAt: z.date().optional(),
+  updatedAt: z.date().optional(),
 });
 
 export type Shop = z.infer<typeof shopSchema>;

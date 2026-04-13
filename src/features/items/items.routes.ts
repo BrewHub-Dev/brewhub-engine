@@ -163,7 +163,7 @@ export const itemsRoutes: FastifyPluginAsync = async (app) => {
         }
 
         const query = req.scopedQuery?.({ _id: item._id }) || {};
-        if (query.ShopId && item.ShopId !== query.ShopId) {
+        if (query.ShopId && item.ShopId?.toString() !== query.ShopId.toString()) {
           return reply.status(403).send({
             error: "No tienes acceso a este item",
           });
@@ -197,7 +197,7 @@ export const itemsRoutes: FastifyPluginAsync = async (app) => {
         }
 
         const query = req.scopedQuery?.({}) || {};
-        if (query.ShopId && existingItem.ShopId !== query.ShopId) {
+        if (query.ShopId && existingItem.ShopId?.toString() !== query.ShopId.toString()) {
           return reply.status(403).send({
             error: "No tienes acceso a este item",
           });
@@ -233,7 +233,7 @@ export const itemsRoutes: FastifyPluginAsync = async (app) => {
         }
 
         const query = req.scopedQuery?.({}) || {};
-        if (query.ShopId && existingItem.ShopId !== query.ShopId) {
+        if (query.ShopId && existingItem.ShopId?.toString() !== query.ShopId.toString()) {
           return reply.status(403).send({
             error: "No tienes acceso a este item",
           });
